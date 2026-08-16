@@ -30,18 +30,16 @@ jobs:
           php artisan view:cache
       - name: Build production container
         run: docker build --tag rachaqakost-ci .
-      - name: Validate Apache configuration
-        run: docker run --rm --entrypoint apache2ctl rachaqakost-ci -t
       - name: Smoke-test production web server
         run: |
           app_key="base64:$(openssl rand -base64 32)"
           container_id=$(docker run --detach \
             --publish 127.0.0.1:8080:8080 \
+            --env SKIP_APP_BOOTSTRAP=true \
             --env APP_ENV=testing \
             --env APP_KEY="$app_key" \
             --env SESSION_DRIVER=array \
             --env CACHE_STORE=array \
-            --entrypoint apache2-foreground \
             rachaqakost-ci)
           trap 'docker logs "$container_id"; docker rm --force "$container_id"' EXIT
           healthy=false

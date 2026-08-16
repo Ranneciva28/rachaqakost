@@ -12,8 +12,8 @@ RUN apt-get update \
     && sed -ri 's!^Listen 80$!Listen ${PORT}!' /etc/apache2/ports.conf \
     && rm -rf /var/lib/apt/lists/*
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public PORT=8080
-COPY docker/apache-vhost.conf /etc/apache2/sites-available/000-default.conf
 COPY --from=build /app /var/www/html
+COPY docker/apache-vhost.conf /etc/apache2/sites-available/000-default.conf
 COPY docker/entrypoint.sh /usr/local/bin/rachaqakost-entrypoint
 RUN chmod +x /usr/local/bin/rachaqakost-entrypoint \
     && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \
