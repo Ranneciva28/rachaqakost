@@ -28,3 +28,7 @@ jobs:
         run: |
           php artisan route:cache
           php artisan view:cache
+      - name: Build production container
+        run: docker build --tag rachaqakost-ci .
+      - name: Validate Apache configuration
+        run: docker run --rm --entrypoint apache2ctl rachaqakost-ci -t
