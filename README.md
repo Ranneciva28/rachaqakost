@@ -8,7 +8,9 @@ Sistem operasional kos berbasis Laravel 12, disiapkan untuk Railway + Supabase P
 - Kategori kamar dinamis beserta warna dan harga bulanan.
 - Pemetaan kamar ke kategori serta status kosong/terisi/maintenance.
 - Check-in, check-out, penghuni aktif, dan histori penghuni.
-- Pembayaran yang otomatis memajukan jatuh tempo 1–24 bulan.
+- Pembayaran dengan periode otomatis non-editable yang memajukan jatuh tempo 1–24 bulan.
+- Input Rupiah berformat separator ribuan serta normalisasi ulang di backend.
+- Follow-up WhatsApp dari dashboard dan data penghuni dengan template dinamis yang dapat diatur Owner.
 - Pengeluaran operasional dan biaya maintenance otomatis.
 - Tiket dan histori maintenance lengkap tanggal, biaya, serta pencatat.
 - Role Owner dan Penjaga; hanya Owner yang mengatur harga, kategori, dan user.

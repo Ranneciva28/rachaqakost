@@ -7,6 +7,7 @@ Route::middleware('auth')->group(function(){
  Route::post('/rooms',[KostController::class,'storeRoom'])->name('rooms.store');Route::patch('/rooms/{room}',[KostController::class,'updateRoom'])->name('rooms.update');
  Route::post('/tenants',[KostController::class,'tenantIn'])->name('tenants.store');Route::patch('/tenants/{tenant}/checkout',[KostController::class,'tenantOut'])->name('tenants.checkout');
  Route::post('/payments',[KostController::class,'payment'])->name('payments.store');Route::post('/expenses',[KostController::class,'expense'])->name('expenses.store');
+ Route::patch('/settings/whatsapp-template',[KostController::class,'updateWhatsAppTemplate'])->name('settings.whatsapp-template');
  Route::post('/maintenances',[KostController::class,'maintenance'])->name('maintenances.store');Route::patch('/maintenances/{maintenance}/done',[KostController::class,'maintenanceDone'])->name('maintenances.done');
  Route::post('/users',[UserController::class,'store'])->name('users.store');Route::patch('/users/{user}',[UserController::class,'update'])->name('users.update');
 });
