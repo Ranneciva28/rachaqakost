@@ -1,0 +1,2 @@
+<?php
+namespace App\Models;use Illuminate\Database\Eloquent\Model;class Payment extends Model{protected $fillable=['tenant_id','amount','paid_at','period','method','recorded_by'];protected $casts=['paid_at'=>'date','amount'=>'decimal:2'];public function tenant(){return $this->belongsTo(Tenant::class);}public function recorder(){return $this->belongsTo(User::class,'recorded_by');}}

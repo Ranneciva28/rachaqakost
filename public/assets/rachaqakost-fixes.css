@@ -1,0 +1,2 @@
+.ring{position:relative}
+.editform textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;background:#fafbf8;min-height:78px;resize:vertical}

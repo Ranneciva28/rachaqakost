@@ -1,0 +1,2 @@
+<?php
+use Monolog\Handler\NullHandler;return ['default'=>env('LOG_CHANNEL','stack'),'channels'=>['stack'=>['driver'=>'stack','channels'=>explode(',',env('LOG_STACK','stderr'))],'single'=>['driver'=>'single','path'=>storage_path('logs/laravel.log'),'level'=>env('LOG_LEVEL','debug')],'stderr'=>['driver'=>'monolog','handler'=>Monolog\Handler\StreamHandler::class,'with'=>['stream'=>'php://stderr'],'level'=>env('LOG_LEVEL','info')],'null'=>['driver'=>'monolog','handler'=>NullHandler::class],'emergency'=>['path'=>storage_path('logs/laravel.log')]]];

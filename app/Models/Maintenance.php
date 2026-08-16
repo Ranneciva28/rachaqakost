@@ -1,0 +1,2 @@
+<?php
+namespace App\Models;use Illuminate\Database\Eloquent\Model;class Maintenance extends Model{protected $fillable=['room_id','title','status','cost','reported_at','completed_at','notes','recorded_by','expense_id'];protected $casts=['reported_at'=>'date','completed_at'=>'date','cost'=>'decimal:2'];public function room(){return $this->belongsTo(Room::class);}public function recorder(){return $this->belongsTo(User::class,'recorded_by');}public function expense(){return $this->belongsTo(Expense::class);}}

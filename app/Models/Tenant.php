@@ -1,0 +1,2 @@
+<?php
+namespace App\Models;use Illuminate\Database\Eloquent\Model;class Tenant extends Model{protected $fillable=['room_id','name','phone','identity_number','move_in','move_out','next_due','active'];protected $casts=['move_in'=>'date','move_out'=>'date','next_due'=>'date','active'=>'boolean'];public function room(){return $this->belongsTo(Room::class);}public function payments(){return $this->hasMany(Payment::class);}}

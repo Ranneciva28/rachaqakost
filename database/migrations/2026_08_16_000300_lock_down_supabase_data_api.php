@@ -1,0 +1,3 @@
+<?php
+use Illuminate\Database\Migrations\Migration;use Illuminate\Support\Facades\DB;
+return new class extends Migration{private array $tables=['users','room_categories','rooms','tenants','payments','expenses','maintenances','sessions','cache','cache_locks'];public function up():void{if(DB::getDriverName()!=='pgsql')return;foreach($this->tables as $table){DB::statement("ALTER TABLE {$table} ENABLE ROW LEVEL SECURITY");DB::statement("REVOKE ALL ON TABLE {$table} FROM anon, authenticated");}}public function down():void{if(DB::getDriverName()!=='pgsql')return;foreach($this->tables as $table)DB::statement("ALTER TABLE {$table} DISABLE ROW LEVEL SECURITY");}};
