@@ -36,7 +36,7 @@ jobs:
         run: |
           app_key="base64:$(openssl rand -base64 32)"
           container_id=$(docker run --detach \
-            --publish 127.0.0.1:8080:80 \
+            --publish 127.0.0.1:8080:8080 \
             --env APP_ENV=testing \
             --env APP_KEY="$app_key" \
             --env SESSION_DRIVER=array \
