@@ -53,4 +53,5 @@ jobs:
             sleep 1
           done
           test "$healthy" = true
+          curl --fail --silent --show-error http://127.0.0.1:8080/healthz | grep --quiet '^ok$'
           curl --fail --silent --show-error http://127.0.0.1:8080/login > /dev/null
