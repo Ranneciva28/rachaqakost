@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Expense, ExpenseCategory, Payment};
+use App\Models\{Expense, ExpenseCategory, Payment, Room, Tenant};
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -37,11 +37,32 @@ class FinanceController extends Controller
                 'percentage'=>$expenseTotal > 0 ? round($amount / $expenseTotal * 100, 1) : 0,
                 'color'=>$category?->color ?? '#7A8582',
                 'cost_type'=>$category?->cost_type ?? 'OPERATING',
+                'cost_behavior'=>$category?->cost_behavior ?? 'FIXED',
                 'transactions'=>$records->count(),
             ];
         })->sortByDesc('amount')->values();
 
         $days = $from->diffInDays($to) + 1;
+        $tenantStays = Tenant::whereDate('move_in', '<=', $to->toDateString())
+            ->where(function ($query) use ($from) {
+                $query->whereNull('move_out')->orWhereDate('move_out', '>=', $from->toDateString());
+            })->get(['move_in', 'move_out']);
+        $occupiedRoomDays = (int) $tenantStays->sum(function (Tenant $tenant) use ($from, $to) {
+            $start = $tenant->move_in->copy()->startOfDay();
+            $end = ($tenant->move_out ?: $to)->copy()->endOfDay();
+            if ($start->lt($from)) $start = $from->copy();
+            if ($end->gt($to)) $end = $to->copy();
+
+            return $start->lte($end) ? $start->diffInDays($end) + 1 : 0;
+        });
+        $totalRooms = Room::count();
+        $availableRoomDays = $totalRooms * $days;
+        $occupancyRate = $availableRoomDays > 0 ? round($occupiedRoomDays / $availableRoomDays * 100, 1) : null;
+        $variableExpense = (float) $expenseRecords->filter(
+            fn (Expense $expense) => $categoryMap->get($expense->category)?->cost_behavior === 'VARIABLE'
+        )->sum('amount');
+        $fixedExpense = $expenseTotal - $variableExpense;
+        $variableCostPerOccupiedRoomDay = $occupiedRoomDays > 0 ? $variableExpense / $occupiedRoomDays : null;
         $previousTo = $from->copy()->subDay()->endOfDay();
         $previousFrom = $previousTo->copy()->subDays($days - 1)->startOfDay();
         $previousIncome = (float) Payment::whereBetween('paid_at', [$previousFrom->toDateString(), $previousTo->toDateString()])->sum('amount');
@@ -58,6 +79,10 @@ class FinanceController extends Controller
             ['label'=>'Revenue coverage', 'value'=>$expenseTotal > 0 ? round($income / $expenseTotal, 2) : null, 'suffix'=>'×', 'help'=>'Pendapatan ÷ total pengeluaran'],
             ['label'=>'Return on expense', 'value'=>$this->percent($netProfit, $expenseTotal), 'help'=>'Laba bersih ÷ pengeluaran'],
             ['label'=>'Rata-rata pendapatan harian', 'money'=>$income / max(1, $days), 'help'=>$days.' hari dalam periode'],
+            ['label'=>'Rata-rata okupansi periode', 'value'=>$occupancyRate, 'help'=>number_format($occupiedRoomDays, 0, ',', '.').' kamar-hari terisi dari '.number_format($availableRoomDays, 0, ',', '.').' tersedia'],
+            ['label'=>'Total variable cost', 'money'=>$variableExpense, 'help'=>($expenseTotal > 0 ? number_format($variableExpense / $expenseTotal * 100, 1, ',', '.').'%' : '0%').' dari seluruh pengeluaran'],
+            ['label'=>'Total fixed cost', 'money'=>$fixedExpense, 'help'=>($expenseTotal > 0 ? number_format($fixedExpense / $expenseTotal * 100, 1, ',', '.').'%' : '0%').' dari seluruh pengeluaran'],
+            ['label'=>'Variable cost / kamar-hari', 'money'=>$variableCostPerOccupiedRoomDay, 'help'=>'Biaya variabel ÷ total kamar-hari terisi'],
         ];
 
         $trend = $this->trend($from, $to, $paymentRecords, $expenseRecords);
@@ -73,6 +98,10 @@ class FinanceController extends Controller
             'operatingExpense'=>$operatingExpense,
             'grossProfit'=>$grossProfit,
             'netProfit'=>$netProfit,
+            'variableExpense'=>$variableExpense,
+            'fixedExpense'=>$fixedExpense,
+            'occupancyRate'=>$occupancyRate,
+            'occupiedRoomDays'=>$occupiedRoomDays,
             'incomeTransactions'=>$paymentRecords->count(),
             'expenseTransactions'=>$expenseRecords->count(),
             'categories'=>$categories,

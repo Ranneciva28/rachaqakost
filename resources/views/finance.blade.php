@@ -79,10 +79,10 @@ $comparisonText=function($value,$inverse=false){
             <article class="panel category-summary">
                 <div class="panelhead"><div><h2>Kategori pengeluaran terbesar</h2><p>Kontributor utama terhadap total biaya</p></div></div>
                 @if($largestCategory)
-                    <div class="largest-category" style="--accent:{{ $largestCategory['color'] }}"><span class="largest-dot"></span><div><small>{{ $largestCategory['cost_type']==='DIRECT'?'Biaya langsung':'Biaya operasional' }}</small><h3>{{ $largestCategory['name'] }}</h3><strong>Rp {{ number_format($largestCategory['amount'],0,',','.') }}</strong></div><b>{{ number_format($largestCategory['percentage'],1,',','.') }}%</b></div>
+                    <div class="largest-category" style="--accent:{{ $largestCategory['color'] }}"><span class="largest-dot"></span><div><small>{{ $largestCategory['cost_type']==='DIRECT'?'Biaya langsung':'Biaya operasional' }} · {{ $largestCategory['cost_behavior']==='VARIABLE'?'Variable cost':'Fixed cost' }}</small><h3>{{ $largestCategory['name'] }}</h3><strong>Rp {{ number_format($largestCategory['amount'],0,',','.') }}</strong></div><b>{{ number_format($largestCategory['percentage'],1,',','.') }}%</b></div>
                     <div class="category-bars">
                         @foreach($categories as $category)
-                            <div class="category-row"><div><span>{{ $category['name'] }}</span><small>{{ $category['transactions'] }} transaksi · Rp {{ number_format($category['amount'],0,',','.') }}</small></div><b>{{ number_format($category['percentage'],1,',','.') }}%</b><div class="category-track"><i style="width:{{ $category['percentage'] }}%;background:{{ $category['color'] }}"></i></div></div>
+                            <div class="category-row"><div><span>{{ $category['name'] }} <em class="cost-behavior-pill {{ $category['cost_behavior']==='VARIABLE'?'variable':'fixed' }}">{{ $category['cost_behavior']==='VARIABLE'?'Variabel':'Tetap' }}</em></span><small>{{ $category['transactions'] }} transaksi · Rp {{ number_format($category['amount'],0,',','.') }}</small></div><b>{{ number_format($category['percentage'],1,',','.') }}%</b><div class="category-track"><i style="width:{{ $category['percentage'] }}%;background:{{ $category['color'] }}"></i></div></div>
                         @endforeach
                     </div>
                 @else
@@ -114,7 +114,7 @@ $comparisonText=function($value,$inverse=false){
             </div>
         </section>
 
-        <aside class="finance-note"><b>Catatan pembacaan laporan</b><p>Gross profit = pendapatan dikurangi kategori biaya langsung. Net profit = pendapatan dikurangi seluruh pengeluaran. Ini adalah laporan manajemen berbasis kas, bukan laporan akuntansi akrual atau laporan pajak.</p><span>Periode pembanding: {{ $previousFrom->translatedFormat('d M Y') }} – {{ $previousTo->translatedFormat('d M Y') }}</span></aside>
+        <aside class="finance-note"><b>Catatan pembacaan laporan</b><p>Gross profit = pendapatan dikurangi kategori biaya langsung. Net profit = pendapatan dikurangi seluruh pengeluaran. Variable cost dianalisis terhadap kamar-hari yang benar-benar terisi berdasarkan tanggal check-in/check-out, sedangkan fixed cost tidak disesuaikan oleh okupansi. Ini adalah laporan manajemen berbasis kas, bukan laporan akuntansi akrual atau laporan pajak.</p><span>Periode pembanding: {{ $previousFrom->translatedFormat('d M Y') }} – {{ $previousTo->translatedFormat('d M Y') }}</span></aside>
     </main>
 
     <nav class="mobile">
