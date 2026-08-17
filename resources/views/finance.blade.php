@@ -6,7 +6,7 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>RachaqaKost — Laporan Keuangan</title>
     <link rel="stylesheet" href="{{ asset('assets/rachaqakost.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/rachaqakost-fixes.css') }}?v=20260817-flex">
+    <link rel="stylesheet" href="{{ asset('assets/rachaqakost-fixes.css') }}?v=20260817-import">
 </head>
 <body>
 @php
@@ -28,6 +28,7 @@ $comparisonText=function($value,$inverse=false){
             @endforeach
             <div class="nav-separator"></div>
             <a href="{{ route('finance') }}" class="active"><span class="ico">Rp</span>Keuangan</a>
+            <a href="{{ route('imports.index') }}"><span class="ico">⇧</span>Import Data</a>
         </nav>
         <div class="profile"><b>{{ auth()->user()->name }}</b><small>Owner / Admin</small><form method="post" action="{{ route('logout') }}">@csrf<button class="logout">Keluar dari workspace</button></form></div>
     </aside>
@@ -122,8 +123,9 @@ $comparisonText=function($value,$inverse=false){
         <a href="{{ route('dashboard',['tab'=>'payments']) }}"><b>↗</b>Pembayaran</a>
         <a href="{{ route('dashboard',['tab'=>'expenses']) }}"><b>↘</b>Pengeluaran</a>
         <a href="{{ route('finance') }}" class="active"><b>Rp</b>Keuangan</a>
+        <a href="{{ route('imports.index') }}"><b>⇧</b>Import</a>
     </nav>
 </div>
-<script src="{{ asset('assets/rachaqakost.js') }}?v=20260817-flex"></script>
+<script src="{{ asset('assets/rachaqakost.js') }}?v=20260817-import"></script>
 </body>
 </html>

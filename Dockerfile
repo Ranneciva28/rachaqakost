@@ -5,7 +5,7 @@ RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoload
 
 FROM php:8.3-apache-bookworm
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq-dev libzip-dev unzip \
+    && apt-get install -y --no-install-recommends libpq-dev libzip-dev libheif-examples unzip \
     && docker-php-ext-install -j$(nproc) pdo_pgsql opcache zip \
     && (a2dismod mpm_event mpm_worker || true) \
     && a2enmod mpm_prefork rewrite headers expires \
@@ -14,6 +14,7 @@ RUN apt-get update \
 ENV APACHE_DOCUMENT_ROOT=/var/www/html/public PORT=8080
 COPY --from=build /app /var/www/html
 COPY docker/apache-vhost.conf /etc/apache2/sites-available/000-default.conf
+COPY docker/uploads.ini /usr/local/etc/php/conf.d/rachaqakost-uploads.ini
 COPY docker/entrypoint.sh /usr/local/bin/rachaqakost-entrypoint
 RUN chmod +x /usr/local/bin/rachaqakost-entrypoint \
     && mkdir -p storage/framework/cache/data storage/framework/sessions storage/framework/views storage/logs bootstrap/cache \

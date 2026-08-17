@@ -1,9 +1,10 @@
 <?php
-use App\Http\Controllers\{AuthController,FinanceController,KostController,UserController};use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\{AuthController,FinanceController,ImportController,KostController,UserController};use Illuminate\Support\Facades\Route;
 Route::middleware('guest')->group(function(){Route::get('/login',[AuthController::class,'create'])->name('login');Route::post('/login',[AuthController::class,'store'])->middleware('throttle:6,1');});
 Route::middleware('auth')->group(function(){
  Route::get('/',[KostController::class,'index'])->name('dashboard');Route::post('/logout',[AuthController::class,'destroy'])->name('logout');
  Route::get('/keuangan',[FinanceController::class,'index'])->name('finance');
+ Route::get('/imports',[ImportController::class,'index'])->name('imports.index');Route::get('/imports/template',[ImportController::class,'template'])->name('imports.template');Route::post('/imports/images',[ImportController::class,'uploadImages'])->name('imports.images');Route::post('/imports/csv',[ImportController::class,'uploadCsv'])->name('imports.csv');Route::get('/imports/{batch}',[ImportController::class,'show'])->name('imports.show');Route::patch('/imports/{batch}',[ImportController::class,'update'])->name('imports.update');Route::post('/imports/{batch}/commit',[ImportController::class,'commit'])->name('imports.commit');Route::delete('/imports/{batch}',[ImportController::class,'destroy'])->name('imports.destroy');
  Route::post('/categories',[KostController::class,'storeCategory'])->name('categories.store');Route::patch('/categories/{category}',[KostController::class,'updateCategory'])->name('categories.update');Route::delete('/categories/{category}',[KostController::class,'destroyCategory'])->name('categories.destroy');
  Route::post('/rooms',[KostController::class,'storeRoom'])->name('rooms.store');Route::patch('/rooms/{room}',[KostController::class,'updateRoom'])->name('rooms.update');
  Route::post('/tenants',[KostController::class,'tenantIn'])->name('tenants.store');Route::patch('/tenants/{tenant}',[KostController::class,'updateTenant'])->name('tenants.update');Route::patch('/tenants/{tenant}/checkout',[KostController::class,'tenantOut'])->name('tenants.checkout');

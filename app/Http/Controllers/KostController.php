@@ -33,6 +33,7 @@ class KostController extends Controller
         return view('dashboard', [
             'activeTab'=>$activeTab, 'rooms'=>$rooms, 'categories'=>RoomCategory::withCount('rooms')->orderBy('name')->get(),
             'tenants'=>$tenants, 'tenantHistory'=>Tenant::with('room.category')->where('active',false)->latest('move_out')->limit(40)->get(),
+            'paymentTenants'=>Tenant::with('room.category')->orderByDesc('active')->orderBy('name')->get(),
             'payments'=>Payment::with(['tenant.room','recorder'])->latest('paid_at')->limit(80)->get(),
             'expenses'=>Expense::with('recorder')->latest('spent_at')->limit(80)->get(),
             'expenseCategories'=>ExpenseCategory::orderByDesc('is_system')->orderBy('name')->get(),
@@ -120,26 +121,34 @@ class KostController extends Controller
     public function payment(Request $request)
     {
         $this->normalizeCurrencyFields($request, ['amount']);
-        $data=$request->validate(['tenant_id'=>['required','exists:tenants,id'],'amount'=>['required','numeric','min:1'],'paid_at'=>['required','date'],'method'=>['required',Rule::in(['Transfer','Cash','QRIS'])],'periods'=>['required','integer','min:1','max:365']]);
+        $data=$request->validate(['tenant_id'=>['required','exists:tenants,id'],'amount'=>['required','numeric','min:1'],'paid_at'=>['required','date'],'method'=>['required',Rule::in(['Transfer','Cash','QRIS'])],'periods'=>['required','integer','min:1','max:365'],'payment_mode'=>['required',Rule::in(['REGULAR','HISTORICAL'])],'billing_cycle'=>['nullable',Rule::in(['DAILY','WEEKLY','MONTHLY'])],'period_start'=>['nullable','date']]);
         DB::transaction(function()use($data,$request){
-            $tenant=Tenant::with('room.category')->where('active',true)->findOrFail($data['tenant_id']);
-            $limit=match($tenant->billing_cycle){'DAILY'=>365,'WEEKLY'=>52,default=>24};
+            $tenant=Tenant::with('room.category')->findOrFail($data['tenant_id']);
+            $historical=$data['payment_mode']==='HISTORICAL';
+            abort_if(!$historical&&!$tenant->active,422,'Pembayaran reguler hanya dapat dicatat untuk penghuni aktif.');
+            abort_if($historical&&empty($data['period_start']),422,'Periode awal wajib diisi untuk pembayaran historis.');
+            abort_if($historical&&empty($data['billing_cycle']),422,'Siklus wajib dipilih untuk pembayaran historis.');
+            $cycle=$historical?$data['billing_cycle']:$tenant->billing_cycle;
+            $limit=match($cycle){'DAILY'=>365,'WEEKLY'=>52,default=>24};
             abort_if((int)$data['periods']>$limit,422,'Jumlah periode melebihi batas untuk siklus tagihan ini.');
-            $periodStart=Carbon::parse($tenant->next_due);
-            [$period,$nextDue]=$this->paymentPeriod($periodStart,$tenant->billing_cycle,(int)$data['periods']);
+            $periodStart=Carbon::parse($historical?$data['period_start']:$tenant->next_due);
+            [$period,$nextDue,$coverageEnd]=$this->paymentPeriod($periodStart,$cycle,(int)$data['periods']);
             Payment::create([
                 'tenant_id'=>$tenant->id,
                 'amount'=>$data['amount'],
                 'paid_at'=>$data['paid_at'],
                 'period'=>$period,
-                'billing_cycle'=>$tenant->billing_cycle,
+                'billing_cycle'=>$cycle,
                 'period_count'=>$data['periods'],
                 'method'=>$data['method'],
                 'recorded_by'=>$request->user()->id,
+                'is_historical'=>$historical,
+                'coverage_start'=>$periodStart,
+                'coverage_end'=>$coverageEnd,
             ]);
-            $tenant->update(['next_due'=>$nextDue]);
+            if(!$historical)$tenant->update(['next_due'=>$nextDue]);
         });
-        return back()->with('success','Pembayaran tersimpan; jatuh tempo otomatis diperbarui.');
+        return back()->with('success',$data['payment_mode']==='HISTORICAL'?'Pembayaran historis tersimpan tanpa mengubah jatuh tempo.':'Pembayaran tersimpan; jatuh tempo otomatis diperbarui.');
     }
 
     public function expense(Request $request)
@@ -222,14 +231,15 @@ class KostController extends Controller
         if($cycle==='DAILY'){
             $end=$start->copy()->addDays($count-1);
             $label=$count===1?$start->translatedFormat('d F Y'):$start->translatedFormat('d M Y').' – '.$end->translatedFormat('d M Y');
-            return[$label,$start->copy()->addDays($count)];
+            return[$label,$start->copy()->addDays($count),$end];
         }
         if($cycle==='WEEKLY'){
             $end=$start->copy()->addWeeks($count)->subDay();
-            return[$start->translatedFormat('d M Y').' – '.$end->translatedFormat('d M Y'),$start->copy()->addWeeks($count)];
+            return[$start->translatedFormat('d M Y').' – '.$end->translatedFormat('d M Y'),$start->copy()->addWeeks($count),$end];
         }
         $end=$start->copy()->addMonthsNoOverflow($count-1);
         $label=$start->isSameMonth($end)?$start->translatedFormat('F Y'):$start->translatedFormat('F Y').' – '.$end->translatedFormat('F Y');
-        return[$label,$start->copy()->addMonthsNoOverflow($count)];
+        $nextDue=$start->copy()->addMonthsNoOverflow($count);
+        return[$label,$nextDue,$nextDue->copy()->subDay()];
     }
 }

@@ -1,0 +1,230 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Models\{Expense, ExpenseCategory, ImportBatch, ImportRow, Payment, Tenant};
+use App\Services\{ImageLedgerExtractor, LedgerImportService};
+use Carbon\Carbon;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+
+class ImportController extends Controller
+{
+    public function index(Request $request)
+    {
+        $this->ownerOnly($request);
+        return view('imports.index', [
+            'batches'=>ImportBatch::with('uploader')->withCount('rows')->latest()->limit(40)->get(),
+            'visionReady'=>(bool) config('services.openai.key'),
+        ]);
+    }
+
+    public function show(Request $request, ImportBatch $batch)
+    {
+        $this->ownerOnly($request);
+        $batch->load(['rows.tenant.room', 'uploader']);
+        return view('imports.review', [
+            'batch'=>$batch,
+            'tenants'=>Tenant::with('room')->orderByDesc('active')->orderBy('name')->get(),
+            'expenseCategories'=>ExpenseCategory::orderBy('name')->get(),
+        ]);
+    }
+
+    public function uploadImages(Request $request, ImageLedgerExtractor $extractor, LedgerImportService $imports)
+    {
+        $this->ownerOnly($request);
+        $data = $request->validate([
+            'images'=>['required','array','min:1','max:4'],
+            'images.*'=>['required','file','max:12288','mimes:jpg,jpeg,png,webp,heic,heif'],
+            'default_year'=>['required','integer','min:2000','max:2100'],
+            'ledger_kind'=>['required', Rule::in(['MIXED','PAYMENT','EXPENSE'])],
+        ]);
+        $files = $request->file('images');
+        $batch = ImportBatch::create([
+            'source_type'=>'IMAGE',
+            'original_names'=>collect($files)->map->getClientOriginalName()->values()->all(),
+            'status'=>'DRAFT',
+            'uploaded_by'=>$request->user()->id,
+        ]);
+
+        try {
+            $rows = $extractor->extract($files, (int) $data['default_year'], $data['ledger_kind']);
+            $imports->createRows($batch, $rows);
+            if ($batch->total_rows === 0) throw new \RuntimeException('Tidak ada baris transaksi yang terbaca dari foto.');
+            return redirect()->route('imports.show', $batch)->with('success', $batch->total_rows.' baris berhasil dibaca. Periksa sebelum import.');
+        } catch (\Throwable $e) {
+            $batch->update(['status'=>'FAILED', 'error_message'=>Str::limit($e->getMessage(), 1000)]);
+            return redirect()->route('imports.index')->withErrors(['images'=>'Foto belum dapat diproses: '.$e->getMessage()]);
+        }
+    }
+
+    public function uploadCsv(Request $request, LedgerImportService $imports)
+    {
+        $this->ownerOnly($request);
+        $request->validate(['csv'=>['required','file','max:10240','mimes:csv,txt']]);
+        $file = $request->file('csv');
+        $batch = ImportBatch::create([
+            'source_type'=>'CSV',
+            'original_names'=>[$file->getClientOriginalName()],
+            'status'=>'DRAFT',
+            'uploaded_by'=>$request->user()->id,
+        ]);
+
+        try {
+            $rows = $this->readCsv($file->getRealPath());
+            $imports->createRows($batch, $rows);
+            if ($batch->total_rows === 0) throw new \RuntimeException('File CSV tidak memiliki baris transaksi.');
+            return redirect()->route('imports.show', $batch)->with('success', $batch->total_rows.' baris CSV dimuat. Periksa sebelum import.');
+        } catch (\Throwable $e) {
+            $batch->update(['status'=>'FAILED', 'error_message'=>Str::limit($e->getMessage(), 1000)]);
+            return redirect()->route('imports.index')->withErrors(['csv'=>'CSV belum dapat diproses: '.$e->getMessage()]);
+        }
+    }
+
+    public function update(Request $request, ImportBatch $batch, LedgerImportService $imports)
+    {
+        $this->ownerOnly($request);
+        abort_unless($batch->status === 'DRAFT', 422, 'Batch yang sudah selesai tidak dapat diubah.');
+        $data = $request->validate([
+            'rows'=>['required','array'],
+            'rows.*.selected'=>['nullable','boolean'],
+            'rows.*.transaction_type'=>['required',Rule::in(['PAYMENT','EXPENSE'])],
+            'rows.*.tenant_id'=>['nullable','exists:tenants,id'],
+            'rows.*.expense_category'=>['nullable','exists:expense_categories,name'],
+            'rows.*.transaction_date'=>['nullable','date'],
+            'rows.*.amount'=>['nullable','string','max:30'],
+            'rows.*.billing_cycle'=>['nullable',Rule::in(['DAILY','WEEKLY','MONTHLY'])],
+            'rows.*.period_count'=>['nullable','integer','min:1','max:365'],
+            'rows.*.period_start'=>['nullable','date'],
+            'rows.*.method'=>['nullable',Rule::in(['Transfer','Cash','QRIS'])],
+            'rows.*.title'=>['nullable','string','max:150'],
+            'rows.*.notes'=>['nullable','string','max:2000'],
+        ]);
+
+        foreach ($batch->rows as $row) {
+            $input = $data['rows'][$row->id] ?? null;
+            if (! is_array($input)) continue;
+            $amount = preg_replace('/\D+/', '', (string) ($input['amount'] ?? ''));
+            $row->update([
+                'selected'=>(bool) ($input['selected'] ?? false),
+                'transaction_type'=>in_array($input['transaction_type'] ?? null, ['PAYMENT','EXPENSE'], true) ? $input['transaction_type'] : 'PAYMENT',
+                'tenant_id'=>filled($input['tenant_id'] ?? null) ? (int) $input['tenant_id'] : null,
+                'expense_category'=>filled($input['expense_category'] ?? null) ? $input['expense_category'] : null,
+                'transaction_date'=>filled($input['transaction_date'] ?? null) ? $input['transaction_date'] : null,
+                'amount'=>$amount !== '' ? $amount : null,
+                'billing_cycle'=>in_array($input['billing_cycle'] ?? null, ['DAILY','WEEKLY','MONTHLY'], true) ? $input['billing_cycle'] : null,
+                'period_count'=>max(1, min(365, (int) ($input['period_count'] ?? 1))),
+                'period_start'=>filled($input['period_start'] ?? null) ? $input['period_start'] : null,
+                'method'=>in_array($input['method'] ?? null, ['Transfer','Cash','QRIS'], true) ? $input['method'] : null,
+                'title'=>filled($input['title'] ?? null) ? Str::limit(trim($input['title']), 150, '') : null,
+                'notes'=>filled($input['notes'] ?? null) ? Str::limit(trim($input['notes']), 2000, '') : null,
+            ]);
+            $imports->validateRow($row);
+        }
+        $imports->refreshBatch($batch);
+
+        return redirect()->route('imports.show', $batch)->with('success', 'Koreksi draft disimpan dan divalidasi ulang.');
+    }
+
+    public function commit(Request $request, ImportBatch $batch, LedgerImportService $imports)
+    {
+        $this->ownerOnly($request);
+        abort_unless($batch->status === 'DRAFT', 422, 'Batch sudah pernah diproses.');
+        $imports->refreshBatch($batch);
+        $selected = $batch->rows()->where('selected', true)->get();
+        if ($selected->isEmpty()) return back()->withErrors(['batch'=>'Pilih minimal satu baris untuk di-import.']);
+        if ($selected->contains(fn (ImportRow $row) => ! empty($row->validation_errors))) {
+            return back()->withErrors(['batch'=>'Masih ada baris terpilih yang belum valid. Koreksi atau nonaktifkan baris tersebut.']);
+        }
+
+        DB::transaction(function () use ($batch, $selected, $request, $imports) {
+            $locked = ImportBatch::whereKey($batch->id)->lockForUpdate()->firstOrFail();
+            abort_unless($locked->status === 'DRAFT', 422, 'Batch sudah pernah diproses.');
+            $imported = 0;
+            foreach ($selected as $row) {
+                if ($row->transaction_type === 'PAYMENT') {
+                    [$period, $coverageEnd] = $imports->periodDetails(Carbon::parse($row->period_start), $row->billing_cycle, $row->period_count);
+                    $payment = Payment::create([
+                        'tenant_id'=>$row->tenant_id,
+                        'amount'=>$row->amount,
+                        'paid_at'=>$row->transaction_date,
+                        'period'=>$period,
+                        'billing_cycle'=>$row->billing_cycle,
+                        'period_count'=>$row->period_count,
+                        'method'=>$row->method,
+                        'recorded_by'=>$request->user()->id,
+                        'is_historical'=>true,
+                        'coverage_start'=>$row->period_start,
+                        'coverage_end'=>$coverageEnd,
+                        'import_batch_id'=>$locked->id,
+                    ]);
+                    $row->update(['imported_payment_id'=>$payment->id]);
+                } else {
+                    $expense = Expense::create([
+                        'title'=>$row->title,
+                        'category'=>$row->expense_category,
+                        'amount'=>$row->amount,
+                        'spent_at'=>$row->transaction_date,
+                        'notes'=>$row->notes,
+                        'recorded_by'=>$request->user()->id,
+                        'import_batch_id'=>$locked->id,
+                    ]);
+                    $row->update(['imported_expense_id'=>$expense->id]);
+                }
+                $imported++;
+            }
+            $locked->update(['status'=>'COMPLETED', 'imported_rows'=>$imported, 'committed_at'=>now()]);
+        });
+
+        return redirect()->route('imports.show', $batch)->with('success', $selected->count().' transaksi historis berhasil masuk tanpa mengubah jatuh tempo.');
+    }
+
+    public function destroy(Request $request, ImportBatch $batch)
+    {
+        $this->ownerOnly($request);
+        abort_if($batch->status === 'COMPLETED', 422, 'Batch selesai disimpan sebagai jejak audit dan tidak dapat dihapus.');
+        $batch->delete();
+        return redirect()->route('imports.index')->with('success', 'Draft batch dihapus.');
+    }
+
+    public function template(Request $request)
+    {
+        $this->ownerOnly($request);
+        return response()->streamDownload(function () {
+            $out = fopen('php://output', 'w');
+            fwrite($out, "\xEF\xBB\xBF");
+            fputcsv($out, ['transaction_type','tenant_name','room_number','transaction_date','amount','billing_cycle','period_count','period_start','method','category','title','notes']);
+            fputcsv($out, ['PAYMENT','Budi','A.01','2026-05-10','1500000','MONTHLY','1','2026-05-01','Transfer','','','Pembayaran Mei']);
+            fputcsv($out, ['EXPENSE','','','2026-05-12','350000','','','','','Listrik','Token listrik','Meter utama']);
+            fclose($out);
+        }, 'template-import-rachaqakost.csv', ['Content-Type'=>'text/csv; charset=UTF-8']);
+    }
+
+    private function readCsv(string $path): array
+    {
+        $handle = fopen($path, 'r');
+        if (! $handle) throw new \RuntimeException('File CSV tidak dapat dibuka.');
+        $firstLine = fgets($handle) ?: '';
+        $delimiter = substr_count($firstLine, ';') > substr_count($firstLine, ',') ? ';' : ',';
+        rewind($handle);
+        $headers = fgetcsv($handle, separator: $delimiter);
+        if (! $headers) throw new \RuntimeException('Header CSV tidak ditemukan.');
+        $headers = array_map(fn ($header) => Str::snake(trim(str_replace("\xEF\xBB\xBF", '', (string) $header))), $headers);
+        $rows = [];
+        while (($values = fgetcsv($handle, separator: $delimiter)) !== false) {
+            if (count(array_filter($values, fn ($value) => trim((string) $value) !== '')) === 0) continue;
+            $values = array_pad($values, count($headers), null);
+            $rows[] = array_combine($headers, array_slice($values, 0, count($headers)));
+            if (count($rows) > 1000) throw new \RuntimeException('Maksimal 1.000 baris per batch CSV.');
+        }
+        fclose($handle);
+        return $rows;
+    }
+
+    private function ownerOnly(Request $request): void
+    {
+        abort_unless($request->user()->isOwner(), 403);
+    }
+}

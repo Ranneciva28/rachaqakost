@@ -57,6 +57,11 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     const tenantSelect = document.getElementById('paymentTenant');
+    const paymentMode = document.getElementById('paymentMode');
+    const paymentModeHelp = document.getElementById('paymentModeHelp');
+    const historicalFields = document.getElementById('historicalPaymentFields');
+    const historicalCycle = document.getElementById('historicalBillingCycle');
+    const historicalPeriodStart = document.getElementById('historicalPeriodStart');
     const periodsInput = document.getElementById('paymentPeriods');
     const periodsLabel = document.getElementById('paymentPeriodsLabel');
     const cycleHelp = document.getElementById('paymentCycleHelp');
@@ -67,8 +72,9 @@ document.addEventListener('DOMContentLoaded', () => {
     const updatePaymentPeriod = () => {
         if (!tenantSelect || !periodsInput || !periodInput) return;
         const option = tenantSelect.selectedOptions[0];
-        const due = option?.dataset.due;
-        const cycle = option?.dataset.cycle || 'MONTHLY';
+        const historical = paymentMode?.value === 'HISTORICAL';
+        const due = historical ? historicalPeriodStart?.value : option?.dataset.due;
+        const cycle = historical ? (historicalCycle?.value || 'MONTHLY') : (option?.dataset.cycle || 'MONTHLY');
         const periods = Math.max(1, Number(periodsInput.value) || 1);
         const cycleConfig = {
             DAILY: {label: 'Jumlah hari', max: 365, help: 'Tarif harian × jumlah hari.'},
@@ -102,16 +108,35 @@ document.addEventListener('DOMContentLoaded', () => {
                 : `${dateFormatter.format(start)} – ${dateFormatter.format(end)}`;
         }
 
-        if (paymentAmount && option.dataset.price) {
-            const autoValue = String(Number(option.dataset.price) * count);
+        const price = historical ? option?.dataset[cycle.toLowerCase()] : option?.dataset.price;
+        if (paymentAmount && price) {
+            const autoValue = String(Number(price) * count);
             paymentAmount.value = autoValue;
             paymentAmount.dataset.autoValue = autoValue;
             formatCurrency(paymentAmount);
         }
     };
+    const updatePaymentMode = () => {
+        if (!paymentMode || !tenantSelect) return;
+        const historical = paymentMode.value === 'HISTORICAL';
+        if (historicalFields) historicalFields.hidden = !historical;
+        if (historicalCycle) historicalCycle.required = historical;
+        if (historicalPeriodStart) historicalPeriodStart.required = historical;
+        tenantSelect.querySelectorAll('option').forEach(option => {
+            option.disabled = !historical && option.value !== '' && option.dataset.active !== '1';
+        });
+        if (tenantSelect.selectedOptions[0]?.disabled) tenantSelect.value = '';
+        if (paymentModeHelp) paymentModeHelp.textContent = historical
+            ? 'Histori menyimpan tanggal dan periode lama tanpa mengubah jatuh tempo penghuni.'
+            : 'Pembayaran reguler memajukan jatuh tempo penghuni sesuai jumlah periode.';
+        updatePaymentPeriod();
+    };
     tenantSelect?.addEventListener('change', updatePaymentPeriod);
     periodsInput?.addEventListener('input', updatePaymentPeriod);
-    updatePaymentPeriod();
+    paymentMode?.addEventListener('change', updatePaymentMode);
+    historicalCycle?.addEventListener('change', updatePaymentPeriod);
+    historicalPeriodStart?.addEventListener('change', updatePaymentPeriod);
+    updatePaymentMode();
 
     const tenantRoom = document.getElementById('tenantRoom');
     const tenantBillingCycle = document.getElementById('tenantBillingCycle');
@@ -217,6 +242,20 @@ document.addEventListener('DOMContentLoaded', () => {
                 cashflowValue.textContent = bar.dataset.tooltip;
                 cashflowValue.hidden = false;
             }
+        });
+    });
+
+    document.querySelectorAll('[data-import-row]').forEach(row => {
+        const type = row.querySelector('[data-import-type]');
+        const updateType = () => row.classList.toggle('is-expense', type?.value === 'EXPENSE');
+        type?.addEventListener('change', updateType);
+        updateType();
+    });
+    document.querySelectorAll('.file-drop input[type="file"]').forEach(input => {
+        input.addEventListener('change', () => {
+            const label = input.closest('.file-drop')?.querySelector('b');
+            if (!label || !input.files?.length) return;
+            label.textContent = input.files.length === 1 ? input.files[0].name : `${input.files.length} file dipilih`;
         });
     });
 
