@@ -103,6 +103,7 @@
 .cost-behavior-pill{display:inline-flex;vertical-align:middle;margin-left:5px;padding:3px 6px;border-radius:999px;font-size:7px;font-style:normal;font-weight:900;line-height:1}
 .cost-behavior-pill.variable{background:#e8eefb;color:#4c63a3}
 .cost-behavior-pill.fixed{background:#edf0ee;color:#65716e}
+.tenant-edit-status{padding:10px 12px;border:1px solid #d5e5df;border-radius:11px;background:#f2f8f5;color:#4d6861;font-size:9px;font-weight:750;line-height:1.5}
 
 @media(max-width:1200px){
   .period-filter{grid-template-columns:1fr;gap:13px}

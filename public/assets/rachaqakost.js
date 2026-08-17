@@ -87,6 +87,42 @@ document.addEventListener('DOMContentLoaded', () => {
     templateInput?.addEventListener('input', updateTemplatePreview);
     updateTemplatePreview();
 
+    const tenantEditModal = document.getElementById('tenantEditModal');
+    const tenantEditForm = document.getElementById('tenantEditForm');
+    const tenantEditRoom = document.getElementById('tenantEditRoom');
+    const tenantEditDueField = document.getElementById('tenantEditDueField');
+    const tenantEditOutField = document.getElementById('tenantEditOutField');
+    const tenantEditStatus = document.getElementById('tenantEditStatus');
+    const tenantEditSubtitle = document.getElementById('tenantEditSubtitle');
+    document.querySelectorAll('.tenant-edit-button').forEach(button => {
+        button.addEventListener('click', () => {
+            if (!tenantEditModal || !tenantEditForm || !tenantEditRoom) return;
+            const active = button.dataset.active === '1';
+            const currentRoom = button.dataset.room;
+            tenantEditForm.action = button.dataset.action;
+            tenantEditForm.elements.namedItem('name').value = button.dataset.name || '';
+            tenantEditForm.elements.namedItem('phone').value = button.dataset.phone || '';
+            tenantEditForm.elements.namedItem('identity_number').value = button.dataset.identity || '';
+            tenantEditForm.elements.namedItem('move_in').value = button.dataset.moveIn || '';
+            tenantEditForm.elements.namedItem('next_due').value = button.dataset.nextDue || '';
+            tenantEditForm.elements.namedItem('move_out').value = button.dataset.moveOut || '';
+            tenantEditForm.elements.namedItem('move_out').required = !active;
+            tenantEditRoom.value = currentRoom;
+            tenantEditRoom.querySelectorAll('option').forEach(option => {
+                option.disabled = active && option.value !== currentRoom && option.dataset.status !== 'KOSONG';
+            });
+            if (tenantEditDueField) tenantEditDueField.hidden = !active;
+            if (tenantEditOutField) tenantEditOutField.hidden = active;
+            if (tenantEditStatus) tenantEditStatus.textContent = active
+                ? 'Penghuni aktif · perubahan kamar akan menyinkronkan status kamar otomatis.'
+                : 'Riwayat check-out · perubahan tidak memengaruhi status kamar saat ini.';
+            if (tenantEditSubtitle) tenantEditSubtitle.textContent = active
+                ? 'Perbarui identitas, kontak, kamar, atau jatuh tempo penghuni aktif.'
+                : 'Koreksi informasi penghuni yang sudah check-out.';
+            tenantEditModal.showModal();
+        });
+    });
+
     const cashflowValue = document.getElementById('cashflowValue');
     document.querySelectorAll('[data-cashflow-bar]').forEach(bar => {
         bar.addEventListener('click', () => {

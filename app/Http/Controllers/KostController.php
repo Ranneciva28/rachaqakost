@@ -80,6 +80,37 @@ class KostController extends Controller
         return back()->with('success','Check-out tercatat; kamar kembali tersedia.');
     }
 
+    public function updateTenant(Request $request, Tenant $tenant)
+    {
+        $data=$request->validate([
+            'room_id'=>['required','exists:rooms,id'],
+            'name'=>['required','string','max:120'],
+            'phone'=>['required','string','max:30'],
+            'identity_number'=>['nullable','string','max:40'],
+            'move_in'=>['required','date'],
+            'next_due'=>['required','date','after_or_equal:move_in'],
+            'move_out'=>[Rule::requiredIf(!$tenant->active),'nullable','date','after_or_equal:move_in'],
+        ]);
+        $targetRoom=Room::findOrFail($data['room_id']);
+        $roomChanged=(int)$tenant->room_id!==(int)$targetRoom->id;
+
+        if($tenant->active&&$roomChanged){
+            abort_if($targetRoom->status!=='KOSONG'||$targetRoom->activeTenant()->exists(),422,'Kamar tujuan tidak tersedia. Pilih kamar kosong.');
+        }
+        if($tenant->active)$data['move_out']=null;
+
+        DB::transaction(function()use($tenant,$targetRoom,$roomChanged,$data){
+            $oldRoom=$tenant->room;
+            $tenant->update($data);
+            if($tenant->active&&$roomChanged){
+                $oldRoom->update(['status'=>$oldRoom->maintenances()->where('status','!=','SELESAI')->exists()?'MAINTENANCE':'KOSONG']);
+                $targetRoom->update(['status'=>'TERISI']);
+            }
+        });
+
+        return back()->with('success','Data penghuni berhasil diperbarui.');
+    }
+
     public function payment(Request $request)
     {
         $this->normalizeCurrencyFields($request, ['amount']);
