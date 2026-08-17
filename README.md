@@ -11,6 +11,8 @@ Sistem operasional kos berbasis Laravel 12, disiapkan untuk Railway + Supabase P
 - Pembayaran dengan periode otomatis non-editable yang memajukan jatuh tempo 1–24 bulan.
 - Input Rupiah berformat separator ribuan serta normalisasi ulang di backend.
 - Follow-up WhatsApp dari dashboard dan data penghuni dengan template dinamis yang dapat diatur Owner.
+- Master kategori pengeluaran yang dapat ditambah, diubah, dan dihapus dari panel Owner.
+- Filter rentang tanggal untuk KPI pendapatan/pengeluaran serta grafik arus kas interaktif.
 - Pengeluaran operasional dan biaya maintenance otomatis.
 - Tiket dan histori maintenance lengkap tanggal, biaya, serta pencatat.
 - Role Owner dan Penjaga; hanya Owner yang mengatur harga, kategori, dan user.

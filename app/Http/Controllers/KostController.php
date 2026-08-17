@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{AppSetting, Expense, Maintenance, Payment, Room, RoomCategory, Tenant, User};
+use App\Models\{AppSetting, Expense, ExpenseCategory, Maintenance, Payment, Room, RoomCategory, Tenant, User};
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -14,7 +14,7 @@ class KostController extends Controller
 
     public function index(Request $request)
     {
-        $month = now()->startOfMonth();
+        [$reportFrom, $reportTo] = $this->reportRange($request);
         $rooms = Room::with(['category', 'activeTenant'])->orderBy('floor')->orderBy('number')->get();
         $tenants = Tenant::with('room.category')->where('active', true)->orderBy('next_due')->get();
         $cashflow = collect(range(5, 0))->map(function (int $ago) {
@@ -22,8 +22,10 @@ class KostController extends Controller
             $range = [$date->copy()->startOfMonth(), $date->copy()->endOfMonth()];
             return ['label'=>$date->translatedFormat('M'),'income'=>(float)Payment::whereBetween('paid_at',$range)->sum('amount'),'expense'=>(float)Expense::whereBetween('spent_at',$range)->sum('amount')];
         });
-        $income = (float) Payment::where('paid_at', '>=', $month)->sum('amount');
-        $expenseTotal = (float) Expense::where('spent_at', '>=', $month)->sum('amount');
+        $incomeQuery = Payment::whereBetween('paid_at', [$reportFrom->toDateString(), $reportTo->toDateString()]);
+        $expenseQuery = Expense::whereBetween('spent_at', [$reportFrom->toDateString(), $reportTo->toDateString()]);
+        $income = (float) (clone $incomeQuery)->sum('amount');
+        $expenseTotal = (float) (clone $expenseQuery)->sum('amount');
         $activeTab = $request->string('tab')->value() ?: 'dashboard';
         $allowed = ['dashboard','rooms','tenants','payments','expenses','maintenance','users'];
         if (!in_array($activeTab, $allowed, true) || ($activeTab === 'users' && !$request->user()->isOwner())) $activeTab = 'dashboard';
@@ -33,8 +35,11 @@ class KostController extends Controller
             'tenants'=>$tenants, 'tenantHistory'=>Tenant::with('room.category')->where('active',false)->latest('move_out')->limit(40)->get(),
             'payments'=>Payment::with(['tenant.room','recorder'])->latest('paid_at')->limit(80)->get(),
             'expenses'=>Expense::with('recorder')->latest('spent_at')->limit(80)->get(),
+            'expenseCategories'=>ExpenseCategory::orderByDesc('is_system')->orderBy('name')->get(),
             'maintenances'=>Maintenance::with(['room','recorder'])->latest('reported_at')->get(),
             'income'=>$income, 'expenseTotal'=>$expenseTotal, 'profit'=>$income-$expenseTotal,
+            'incomeTransactionCount'=>(clone $incomeQuery)->count(), 'expenseTransactionCount'=>(clone $expenseQuery)->count(),
+            'reportFrom'=>$reportFrom, 'reportTo'=>$reportTo,
             'dueSoon'=>$tenants->filter(fn(Tenant $t)=>$t->next_due->lte(now()->addDays(7))),
             'cashflow'=>$cashflow, 'maxCashflow'=>max(1,(float)$cashflow->flatMap(fn($p)=>[$p['income'],$p['expense']])->max()),
             'users'=>$request->user()->isOwner()?User::orderBy('name')->get():collect(),
@@ -102,8 +107,39 @@ class KostController extends Controller
     public function expense(Request $request)
     {
         $this->normalizeCurrencyFields($request, ['amount']);
-        $data=$request->validate(['title'=>['required','max:150'],'category'=>['required','max:60'],'amount'=>['required','numeric','min:1'],'spent_at'=>['required','date'],'notes'=>['nullable','max:500']]);
+        $data=$request->validate(['title'=>['required','max:150'],'category'=>['required',Rule::exists('expense_categories','name')],'amount'=>['required','numeric','min:1'],'spent_at'=>['required','date'],'notes'=>['nullable','max:500']]);
         Expense::create($data+['recorded_by'=>$request->user()->id]); return back()->with('success','Pengeluaran dicatat.');
+    }
+
+    public function storeExpenseCategory(Request $request)
+    {
+        $this->ownerOnly($request);
+        ExpenseCategory::create($this->expenseCategoryData($request));
+
+        return back()->with('success','Kategori pengeluaran ditambahkan.');
+    }
+
+    public function updateExpenseCategory(Request $request, ExpenseCategory $expenseCategory)
+    {
+        $this->ownerOnly($request);
+        $oldName=$expenseCategory->name;
+        $data=$this->expenseCategoryData($request,$expenseCategory);
+        abort_if($expenseCategory->is_system&&$oldName!==$data['name'],422,'Nama kategori sistem Maintenance tidak dapat diubah.');
+        DB::transaction(function()use($expenseCategory,$oldName,$data){
+            $expenseCategory->update($data);
+            if($oldName!==$data['name'])Expense::where('category',$oldName)->update(['category'=>$data['name']]);
+        });
+
+        return back()->with('success','Kategori pengeluaran diperbarui.');
+    }
+
+    public function destroyExpenseCategory(Request $request, ExpenseCategory $expenseCategory)
+    {
+        $this->ownerOnly($request);
+        abort_if($expenseCategory->is_system,422,'Kategori sistem Maintenance tidak dapat dihapus.');
+        $expenseCategory->delete();
+
+        return back()->with('success','Kategori dihapus; histori pengeluaran tetap tersimpan.');
     }
 
     public function maintenance(Request $request)
@@ -139,5 +175,7 @@ class KostController extends Controller
 
     private function ownerOnly(Request $request):void { abort_unless($request->user()->isOwner(),403); }
     private function categoryData(Request $request,?RoomCategory $category=null):array { $this->normalizeCurrencyFields($request,['monthly_price']); return $request->validate(['name'=>['required','max:80',Rule::unique('room_categories','name')->ignore($category)],'monthly_price'=>['required','numeric','min:0'],'color'=>['required','regex:/^#[0-9A-Fa-f]{6}$/']]); }
+    private function expenseCategoryData(Request $request,?ExpenseCategory $category=null):array { return $request->validate(['name'=>['required','max:60',Rule::unique('expense_categories','name')->ignore($category)],'color'=>['required','regex:/^#[0-9A-Fa-f]{6}$/']]); }
+    private function reportRange(Request $request):array { $from=$request->string('from')->value();$to=$request->string('to')->value();$from=Carbon::hasFormat($from,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$from)->startOfDay():now()->startOfMonth();$to=Carbon::hasFormat($to,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$to)->endOfDay():now()->endOfDay();if($from->gt($to))[$from,$to]=[$to->copy()->startOfDay(),$from->copy()->endOfDay()];return[$from,$to]; }
     private function normalizeCurrencyFields(Request $request,array $fields):void { foreach($fields as $field){if($request->filled($field))$request->merge([$field=>preg_replace('/\D+/','',(string)$request->input($field))]);} }
 }

@@ -87,6 +87,18 @@ document.addEventListener('DOMContentLoaded', () => {
     templateInput?.addEventListener('input', updateTemplatePreview);
     updateTemplatePreview();
 
+    const cashflowValue = document.getElementById('cashflowValue');
+    document.querySelectorAll('[data-cashflow-bar]').forEach(bar => {
+        bar.addEventListener('click', () => {
+            document.querySelectorAll('[data-cashflow-bar]').forEach(item => item.classList.remove('active'));
+            bar.classList.add('active');
+            if (cashflowValue) {
+                cashflowValue.textContent = bar.dataset.tooltip;
+                cashflowValue.hidden = false;
+            }
+        });
+    });
+
     const toast = document.querySelector('.toast');
     if (toast) setTimeout(() => toast.classList.add('hide'), 4200);
 });
