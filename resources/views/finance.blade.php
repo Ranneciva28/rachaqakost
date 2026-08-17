@@ -38,19 +38,24 @@ $comparisonText=function($value,$inverse=false){
             <div class="actions"><a class="btn secondary" href="{{ route('dashboard',['tab'=>'expenses']) }}">+ Pengeluaran</a><a class="btn" href="{{ route('dashboard',['tab'=>'payments']) }}">+ Pendapatan</a></div>
         </header>
 
-        <form class="report-filter finance-filter" method="get" action="{{ route('finance') }}">
-            <div><b>Periode laporan</b><small>Semua angka, rasio, kategori, dan tren mengikuti rentang ini.</small></div>
-            <label>Dari<input type="date" name="from" value="{{ $from->toDateString() }}" required></label>
-            <label>Sampai<input type="date" name="to" value="{{ $to->toDateString() }}" required></label>
-            <button class="btn">Terapkan</button>
-        </form>
-        <div class="period-presets">
-            <span>Filter cepat</span>
-            <a href="{{ route('finance') }}">Bulan ini</a>
-            <a href="{{ route('finance',['from'=>now()->subMonthNoOverflow()->startOfMonth()->toDateString(),'to'=>now()->subMonthNoOverflow()->endOfMonth()->toDateString()]) }}">Bulan lalu</a>
-            <a href="{{ route('finance',['from'=>now()->startOfYear()->toDateString(),'to'=>now()->toDateString()]) }}">Tahun berjalan</a>
-            <a href="{{ route('finance',['from'=>now()->subYear()->startOfYear()->toDateString(),'to'=>now()->subYear()->endOfYear()->toDateString()]) }}">Tahun lalu</a>
-        </div>
+        <section class="period-panel finance-period-panel">
+            <form class="period-filter" method="get" action="{{ route('finance') }}">
+                <div class="period-filter__intro"><span class="period-filter__icon">▣</span><div><b>Periode laporan</b><small>Seluruh kartu, grafik, kategori, dan rasio mengikuti rentang ini.</small></div></div>
+                <div class="period-filter__controls">
+                    <label class="period-filter__field"><span>Dari tanggal</span><input type="date" name="from" value="{{ $from->toDateString() }}" required></label>
+                    <span class="period-filter__arrow">→</span>
+                    <label class="period-filter__field"><span>Sampai tanggal</span><input type="date" name="to" value="{{ $to->toDateString() }}" required></label>
+                    <button class="btn period-filter__apply">Terapkan</button>
+                </div>
+            </form>
+            <nav class="period-presets" aria-label="Pilihan periode cepat">
+                <span>Filter cepat</span>
+                <a href="{{ route('finance') }}">Bulan ini</a>
+                <a href="{{ route('finance',['from'=>now()->subMonthNoOverflow()->startOfMonth()->toDateString(),'to'=>now()->subMonthNoOverflow()->endOfMonth()->toDateString()]) }}">Bulan lalu</a>
+                <a href="{{ route('finance',['from'=>now()->startOfYear()->toDateString(),'to'=>now()->toDateString()]) }}">Tahun berjalan</a>
+                <a href="{{ route('finance',['from'=>now()->subYear()->startOfYear()->toDateString(),'to'=>now()->subYear()->endOfYear()->toDateString()]) }}">Tahun lalu</a>
+            </nav>
+        </section>
 
         <section class="finance-kpis">
             <article class="finance-kpi income"><div class="finance-kpi-head"><span>Pendapatan</span><i>↗</i></div><strong>Rp {{ number_format($income,0,',','.') }}</strong><small>{{ $incomeTransactions }} transaksi</small><em class="{{ ($comparison['income']??0)<0?'bad':'' }}">{{ $comparisonText($comparison['income']) }}</em></article>
