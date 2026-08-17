@@ -16,7 +16,7 @@ class ImportController extends Controller
     {
         $this->ownerOnly($request);
         return view('imports.index', [
-            'batches'=>ImportBatch::with('uploader')->withCount('rows')->latest()->limit(40)->get(),
+            'batches'=>ImportBatch::with(['uploader', 'undoer'])->withCount('rows')->latest()->limit(40)->get(),
             'visionReady'=>(bool) config('services.openai.key'),
         ]);
     }
@@ -24,7 +24,7 @@ class ImportController extends Controller
     public function show(Request $request, ImportBatch $batch)
     {
         $this->ownerOnly($request);
-        $batch->load(['rows.tenant.room', 'uploader']);
+        $batch->load(['rows.tenant.room', 'uploader', 'undoer']);
         return view('imports.review', [
             'batch'=>$batch,
             'tenants'=>Tenant::with('room')->orderByDesc('active')->orderBy('name')->get(),
@@ -179,6 +179,41 @@ class ImportController extends Controller
         });
 
         return redirect()->route('imports.show', $batch)->with('success', $selected->count().' transaksi historis berhasil masuk tanpa mengubah jatuh tempo.');
+    }
+
+    public function undo(Request $request, ImportBatch $batch, LedgerImportService $imports)
+    {
+        $this->ownerOnly($request);
+        abort_unless($batch->status === 'COMPLETED', 422, 'Hanya batch import yang sudah di-commit yang dapat di-undo.');
+
+        $deleted = DB::transaction(function () use ($batch, $request) {
+            $locked = ImportBatch::whereKey($batch->id)->lockForUpdate()->firstOrFail();
+            abort_unless($locked->status === 'COMPLETED', 422, 'Batch ini sudah di-undo atau belum selesai.');
+
+            $paymentCount = Payment::where('import_batch_id', $locked->id)->count();
+            $expenseCount = Expense::where('import_batch_id', $locked->id)->count();
+
+            Payment::where('import_batch_id', $locked->id)->delete();
+            Expense::where('import_batch_id', $locked->id)->delete();
+            ImportRow::where('import_batch_id', $locked->id)->update([
+                'imported_payment_id'=>null,
+                'imported_expense_id'=>null,
+            ]);
+
+            $locked->update([
+                'status'=>'DRAFT',
+                'imported_rows'=>0,
+                'undo_count'=>$locked->undo_count + 1,
+                'last_undone_at'=>now(),
+                'last_undone_by'=>$request->user()->id,
+            ]);
+
+            return $paymentCount + $expenseCount;
+        });
+
+        $imports->refreshBatch($batch->fresh());
+
+        return redirect()->route('imports.show', $batch)->with('success', $deleted.' transaksi hasil import dibatalkan. Batch kembali menjadi draft dan dapat dikoreksi atau di-commit ulang.');
     }
 
     public function destroy(Request $request, ImportBatch $batch)
