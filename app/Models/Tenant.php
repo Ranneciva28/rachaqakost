@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Tenant extends Model
 {
-    protected $fillable = ['room_id', 'name', 'phone', 'identity_number', 'move_in', 'move_out', 'next_due', 'active'];
+    protected $fillable = ['room_id', 'name', 'phone', 'identity_number', 'move_in', 'move_out', 'next_due', 'billing_cycle', 'active'];
 
     protected $casts = ['move_in'=>'date', 'move_out'=>'date', 'next_due'=>'date', 'active'=>'boolean'];
 
@@ -18,6 +18,24 @@ class Tenant extends Model
     public function payments()
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function billingRate(): float
+    {
+        return (float) match ($this->billing_cycle) {
+            'DAILY' => $this->room->category->daily_price,
+            'WEEKLY' => $this->room->category->weekly_price,
+            default => $this->room->category->monthly_price,
+        };
+    }
+
+    public function billingCycleLabel(): string
+    {
+        return match ($this->billing_cycle) {
+            'DAILY' => 'Harian',
+            'WEEKLY' => 'Mingguan',
+            default => 'Bulanan',
+        };
     }
 
     public function whatsappPhone(): ?string
@@ -51,7 +69,8 @@ class Tenant extends Model
             '{kamar}' => $this->room->number,
             '{kategori}' => $this->room->category->name,
             '{jatuh_tempo}' => $this->next_due->translatedFormat('d F Y'),
-            '{nominal}' => 'Rp '.number_format((float) $this->room->category->monthly_price, 0, ',', '.'),
+            '{nominal}' => 'Rp '.number_format($this->billingRate(), 0, ',', '.'),
+            '{siklus}' => strtolower($this->billingCycleLabel()),
             '{status}' => $status,
         ]);
 

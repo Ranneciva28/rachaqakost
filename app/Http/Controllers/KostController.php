@@ -66,8 +66,9 @@ class KostController extends Controller
 
     public function tenantIn(Request $request)
     {
-        $data=$request->validate(['room_id'=>['required','exists:rooms,id'],'name'=>['required','max:120'],'phone'=>['required','max:30'],'identity_number'=>['nullable','max:40'],'move_in'=>['required','date'],'next_due'=>['required','date','after_or_equal:move_in']]);
-        $room=Room::findOrFail($data['room_id']); abort_if($room->status!=='KOSONG'||$room->activeTenant()->exists(),422,'Kamar tidak tersedia.');
+        $data=$request->validate(['room_id'=>['required','exists:rooms,id'],'name'=>['required','max:120'],'phone'=>['required','max:30'],'identity_number'=>['nullable','max:40'],'move_in'=>['required','date'],'next_due'=>['required','date','after_or_equal:move_in'],'billing_cycle'=>['required',Rule::in(['DAILY','WEEKLY','MONTHLY'])]]);
+        $room=Room::with('category')->findOrFail($data['room_id']); abort_if($room->status!=='KOSONG'||$room->activeTenant()->exists(),422,'Kamar tidak tersedia.');
+        abort_if($this->billingRate($room,$data['billing_cycle'])<=0,422,'Harga untuk siklus tagihan tersebut belum diatur pada kategori kamar.');
         DB::transaction(function()use($data,$room){Tenant::create($data+['active'=>true]);$room->update(['status'=>'TERISI']);});
         return back()->with('success','Penghuni check-in; kamar otomatis terisi.');
     }
@@ -89,6 +90,7 @@ class KostController extends Controller
             'identity_number'=>['nullable','string','max:40'],
             'move_in'=>['required','date'],
             'next_due'=>['required','date','after_or_equal:move_in'],
+            'billing_cycle'=>['required',Rule::in(['DAILY','WEEKLY','MONTHLY'])],
             'move_out'=>[Rule::requiredIf(!$tenant->active),'nullable','date','after_or_equal:move_in'],
         ]);
         $targetRoom=Room::findOrFail($data['room_id']);
@@ -96,6 +98,10 @@ class KostController extends Controller
 
         if($tenant->active&&$roomChanged){
             abort_if($targetRoom->status!=='KOSONG'||$targetRoom->activeTenant()->exists(),422,'Kamar tujuan tidak tersedia. Pilih kamar kosong.');
+        }
+        if($tenant->active){
+            $targetRoom->loadMissing('category');
+            abort_if($this->billingRate($targetRoom,$data['billing_cycle'])<=0,422,'Harga untuk siklus tagihan tersebut belum diatur pada kategori kamar.');
         }
         if($tenant->active)$data['move_out']=null;
 
@@ -114,23 +120,24 @@ class KostController extends Controller
     public function payment(Request $request)
     {
         $this->normalizeCurrencyFields($request, ['amount']);
-        $data=$request->validate(['tenant_id'=>['required','exists:tenants,id'],'amount'=>['required','numeric','min:1'],'paid_at'=>['required','date'],'method'=>['required',Rule::in(['Transfer','Cash','QRIS'])],'months'=>['required','integer','min:1','max:24']]);
+        $data=$request->validate(['tenant_id'=>['required','exists:tenants,id'],'amount'=>['required','numeric','min:1'],'paid_at'=>['required','date'],'method'=>['required',Rule::in(['Transfer','Cash','QRIS'])],'periods'=>['required','integer','min:1','max:365']]);
         DB::transaction(function()use($data,$request){
-            $tenant=Tenant::where('active',true)->findOrFail($data['tenant_id']);
+            $tenant=Tenant::with('room.category')->where('active',true)->findOrFail($data['tenant_id']);
+            $limit=match($tenant->billing_cycle){'DAILY'=>365,'WEEKLY'=>52,default=>24};
+            abort_if((int)$data['periods']>$limit,422,'Jumlah periode melebihi batas untuk siklus tagihan ini.');
             $periodStart=Carbon::parse($tenant->next_due);
-            $periodEnd=$periodStart->copy()->addMonthsNoOverflow((int)$data['months']-1);
-            $period=$periodStart->isSameMonth($periodEnd)
-                ?$periodStart->translatedFormat('F Y')
-                :$periodStart->translatedFormat('F Y').' – '.$periodEnd->translatedFormat('F Y');
+            [$period,$nextDue]=$this->paymentPeriod($periodStart,$tenant->billing_cycle,(int)$data['periods']);
             Payment::create([
                 'tenant_id'=>$tenant->id,
                 'amount'=>$data['amount'],
                 'paid_at'=>$data['paid_at'],
                 'period'=>$period,
+                'billing_cycle'=>$tenant->billing_cycle,
+                'period_count'=>$data['periods'],
                 'method'=>$data['method'],
                 'recorded_by'=>$request->user()->id,
             ]);
-            $tenant->update(['next_due'=>$periodStart->addMonthsNoOverflow((int)$data['months'])]);
+            $tenant->update(['next_due'=>$nextDue]);
         });
         return back()->with('success','Pembayaran tersimpan; jatuh tempo otomatis diperbarui.');
     }
@@ -205,8 +212,24 @@ class KostController extends Controller
     }
 
     private function ownerOnly(Request $request):void { abort_unless($request->user()->isOwner(),403); }
-    private function categoryData(Request $request,?RoomCategory $category=null):array { $this->normalizeCurrencyFields($request,['monthly_price']); return $request->validate(['name'=>['required','max:80',Rule::unique('room_categories','name')->ignore($category)],'monthly_price'=>['required','numeric','min:0'],'color'=>['required','regex:/^#[0-9A-Fa-f]{6}$/']]); }
+    private function categoryData(Request $request,?RoomCategory $category=null):array { $this->normalizeCurrencyFields($request,['daily_price','weekly_price','monthly_price']); return $request->validate(['name'=>['required','max:80',Rule::unique('room_categories','name')->ignore($category)],'daily_price'=>['required','numeric','min:0'],'weekly_price'=>['required','numeric','min:0'],'monthly_price'=>['required','numeric','min:0'],'color'=>['required','regex:/^#[0-9A-Fa-f]{6}$/']]); }
     private function expenseCategoryData(Request $request,?ExpenseCategory $category=null):array { return $request->validate(['name'=>['required','max:60',Rule::unique('expense_categories','name')->ignore($category)],'color'=>['required','regex:/^#[0-9A-Fa-f]{6}$/'],'cost_type'=>['required',Rule::in(['DIRECT','OPERATING'])],'cost_behavior'=>['required',Rule::in(['VARIABLE','FIXED'])]]); }
     private function reportRange(Request $request):array { $from=$request->string('from')->value();$to=$request->string('to')->value();$from=Carbon::hasFormat($from,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$from)->startOfDay():now()->startOfMonth();$to=Carbon::hasFormat($to,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$to)->endOfDay():now()->endOfDay();if($from->gt($to))[$from,$to]=[$to->copy()->startOfDay(),$from->copy()->endOfDay()];return[$from,$to]; }
     private function normalizeCurrencyFields(Request $request,array $fields):void { foreach($fields as $field){if($request->filled($field))$request->merge([$field=>preg_replace('/\D+/','',(string)$request->input($field))]);} }
+    private function billingRate(Room $room,string $cycle):float { return (float)match($cycle){'DAILY'=>$room->category->daily_price,'WEEKLY'=>$room->category->weekly_price,default=>$room->category->monthly_price}; }
+    private function paymentPeriod(Carbon $start,string $cycle,int $count):array
+    {
+        if($cycle==='DAILY'){
+            $end=$start->copy()->addDays($count-1);
+            $label=$count===1?$start->translatedFormat('d F Y'):$start->translatedFormat('d M Y').' – '.$end->translatedFormat('d M Y');
+            return[$label,$start->copy()->addDays($count)];
+        }
+        if($cycle==='WEEKLY'){
+            $end=$start->copy()->addWeeks($count)->subDay();
+            return[$start->translatedFormat('d M Y').' – '.$end->translatedFormat('d M Y'),$start->copy()->addWeeks($count)];
+        }
+        $end=$start->copy()->addMonthsNoOverflow($count-1);
+        $label=$start->isSameMonth($end)?$start->translatedFormat('F Y'):$start->translatedFormat('F Y').' – '.$end->translatedFormat('F Y');
+        return[$label,$start->copy()->addMonthsNoOverflow($count)];
+    }
 }

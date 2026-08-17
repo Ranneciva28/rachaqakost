@@ -6,7 +6,7 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>RachaqaKost — Laporan Keuangan</title>
     <link rel="stylesheet" href="{{ asset('assets/rachaqakost.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/rachaqakost-fixes.css') }}">
+    <link rel="stylesheet" href="{{ asset('assets/rachaqakost-fixes.css') }}?v=20260817-flex">
 </head>
 <body>
 @php
@@ -114,7 +114,7 @@ $comparisonText=function($value,$inverse=false){
             </div>
         </section>
 
-        <aside class="finance-note"><b>Catatan pembacaan laporan</b><p>Gross profit = pendapatan dikurangi kategori biaya langsung. Net profit = pendapatan dikurangi seluruh pengeluaran. Variable cost dianalisis terhadap kamar-hari yang benar-benar terisi berdasarkan tanggal check-in/check-out, sedangkan fixed cost tidak disesuaikan oleh okupansi. Ini adalah laporan manajemen berbasis kas, bukan laporan akuntansi akrual atau laporan pajak.</p><span>Periode pembanding: {{ $previousFrom->translatedFormat('d M Y') }} – {{ $previousTo->translatedFormat('d M Y') }}</span></aside>
+        <aside class="finance-note"><b>Catatan pembacaan laporan</b><p>Gross profit = pendapatan dikurangi kategori biaya langsung. Net profit = pendapatan dikurangi seluruh pengeluaran. Fixed cost adalah biaya yang tetap muncul secara berkala, sedangkan variable cost berubah mengikuti aktivitas usaha. Klasifikasi ini tidak dihitung dari okupansi. Laporan ini berbasis kas, bukan laporan akuntansi akrual atau laporan pajak.</p><span>Periode pembanding: {{ $previousFrom->translatedFormat('d M Y') }} – {{ $previousTo->translatedFormat('d M Y') }}</span></aside>
     </main>
 
     <nav class="mobile">
@@ -124,6 +124,6 @@ $comparisonText=function($value,$inverse=false){
         <a href="{{ route('finance') }}" class="active"><b>Rp</b>Keuangan</a>
     </nav>
 </div>
-<script src="{{ asset('assets/rachaqakost.js') }}"></script>
+<script src="{{ asset('assets/rachaqakost.js') }}?v=20260817-flex"></script>
 </body>
 </html>

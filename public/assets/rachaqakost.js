@@ -32,16 +32,53 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    const parseLocalDate = value => {
+        const [year, month, day] = String(value || '').split('-').map(Number);
+        return year && month && day ? new Date(year, month - 1, day) : null;
+    };
+    const toDateValue = date => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+    };
+    const addCycle = (date, cycle, count) => {
+        const result = new Date(date);
+        if (cycle === 'DAILY') result.setDate(result.getDate() + count);
+        else if (cycle === 'WEEKLY') result.setDate(result.getDate() + (count * 7));
+        else {
+            const originalDay = result.getDate();
+            result.setDate(1);
+            result.setMonth(result.getMonth() + count);
+            const lastDay = new Date(result.getFullYear(), result.getMonth() + 1, 0).getDate();
+            result.setDate(Math.min(originalDay, lastDay));
+        }
+        return result;
+    };
+
     const tenantSelect = document.getElementById('paymentTenant');
-    const monthsInput = document.getElementById('paymentMonths');
+    const periodsInput = document.getElementById('paymentPeriods');
+    const periodsLabel = document.getElementById('paymentPeriodsLabel');
+    const cycleHelp = document.getElementById('paymentCycleHelp');
     const periodInput = document.getElementById('paymentPeriod');
     const paymentAmount = document.querySelector('#paymentModal [name="amount"]');
     const monthFormatter = new Intl.DateTimeFormat('id-ID', {month: 'long', year: 'numeric'});
+    const dateFormatter = new Intl.DateTimeFormat('id-ID', {day: 'numeric', month: 'long', year: 'numeric'});
     const updatePaymentPeriod = () => {
-        if (!tenantSelect || !monthsInput || !periodInput) return;
+        if (!tenantSelect || !periodsInput || !periodInput) return;
         const option = tenantSelect.selectedOptions[0];
         const due = option?.dataset.due;
-        const months = Math.max(1, Number(monthsInput.value) || 1);
+        const cycle = option?.dataset.cycle || 'MONTHLY';
+        const periods = Math.max(1, Number(periodsInput.value) || 1);
+        const cycleConfig = {
+            DAILY: {label: 'Jumlah hari', max: 365, help: 'Tarif harian × jumlah hari.'},
+            WEEKLY: {label: 'Jumlah minggu', max: 52, help: 'Tarif mingguan × jumlah minggu.'},
+            MONTHLY: {label: 'Jumlah bulan', max: 24, help: 'Tarif bulanan × jumlah bulan.'},
+        }[cycle];
+        periodsInput.max = String(cycleConfig.max);
+        if (Number(periodsInput.value) > cycleConfig.max) periodsInput.value = String(cycleConfig.max);
+        if (periodsLabel) periodsLabel.textContent = cycleConfig.label;
+        if (cycleHelp) cycleHelp.textContent = `${cycleConfig.help} Periode dihitung otomatis dan tidak dapat diedit.`;
 
         if (!due) {
             periodInput.value = 'Pilih penghuni terlebih dahulu';
@@ -49,23 +86,69 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
 
-        const [year, month] = due.split('-').map(Number);
-        const start = new Date(year, month - 1, 1);
-        const end = new Date(year, month - 1 + months - 1, 1);
-        const startLabel = monthFormatter.format(start);
-        const endLabel = monthFormatter.format(end);
-        periodInput.value = months === 1 ? startLabel : `${startLabel} – ${endLabel}`;
+        const count = Math.min(periods, cycleConfig.max);
+        const start = parseLocalDate(due);
+        if (!start) return;
+        if (cycle === 'MONTHLY') {
+            const end = addCycle(start, cycle, count - 1);
+            const startLabel = monthFormatter.format(start);
+            const endLabel = monthFormatter.format(end);
+            periodInput.value = count === 1 ? startLabel : `${startLabel} – ${endLabel}`;
+        } else {
+            const end = addCycle(start, cycle, count);
+            end.setDate(end.getDate() - 1);
+            periodInput.value = count === 1 && cycle === 'DAILY'
+                ? dateFormatter.format(start)
+                : `${dateFormatter.format(start)} – ${dateFormatter.format(end)}`;
+        }
 
         if (paymentAmount && option.dataset.price) {
-            const autoValue = String(Number(option.dataset.price) * months);
+            const autoValue = String(Number(option.dataset.price) * count);
             paymentAmount.value = autoValue;
             paymentAmount.dataset.autoValue = autoValue;
             formatCurrency(paymentAmount);
         }
     };
     tenantSelect?.addEventListener('change', updatePaymentPeriod);
-    monthsInput?.addEventListener('input', updatePaymentPeriod);
+    periodsInput?.addEventListener('input', updatePaymentPeriod);
     updatePaymentPeriod();
+
+    const tenantRoom = document.getElementById('tenantRoom');
+    const tenantBillingCycle = document.getElementById('tenantBillingCycle');
+    const tenantRatePreview = document.getElementById('tenantRatePreview');
+    const tenantMoveIn = document.getElementById('tenantMoveIn');
+    const tenantNextDue = document.getElementById('tenantNextDue');
+    const cycleLabels = {DAILY: 'harian', WEEKLY: 'mingguan', MONTHLY: 'bulanan'};
+    const updateTenantBilling = () => {
+        if (!tenantRoom || !tenantBillingCycle) return;
+        const room = tenantRoom.selectedOptions[0];
+        let cycle = tenantBillingCycle.value;
+        tenantBillingCycle.querySelectorAll('option').forEach(option => {
+            const optionPrice = Number(room?.dataset[option.value.toLowerCase()] || 0);
+            option.disabled = Boolean(room?.value) && optionPrice <= 0;
+        });
+        if (tenantBillingCycle.selectedOptions[0]?.disabled) {
+            const available = [...tenantBillingCycle.options].find(option => !option.disabled);
+            if (available) {
+                available.selected = true;
+                cycle = available.value;
+            }
+        }
+        const price = Number(room?.dataset[cycle.toLowerCase()] || 0);
+        if (tenantRatePreview) {
+            tenantRatePreview.textContent = !room?.value
+                ? 'Pilih kamar untuk melihat tarif.'
+                : price > 0
+                    ? `Tarif ${cycleLabels[cycle]}: Rp ${new Intl.NumberFormat('id-ID').format(price)} per periode.`
+                    : `Tarif ${cycleLabels[cycle]} belum diatur untuk kamar ini.`;
+        }
+        const moveIn = parseLocalDate(tenantMoveIn?.value);
+        if (moveIn && tenantNextDue) tenantNextDue.value = toDateValue(addCycle(moveIn, cycle, 1));
+    };
+    tenantRoom?.addEventListener('change', updateTenantBilling);
+    tenantBillingCycle?.addEventListener('change', updateTenantBilling);
+    tenantMoveIn?.addEventListener('change', updateTenantBilling);
+    updateTenantBilling();
 
     const templateInput = document.querySelector('[name="template"]');
     const templatePreview = document.getElementById('whatsappTemplatePreview');
@@ -76,6 +159,7 @@ document.addEventListener('DOMContentLoaded', () => {
             '{kamar}': 'A.01',
             '{kategori}': 'VIP',
             '{nominal}': 'Rp 1.500.000',
+            '{siklus}': 'bulanan',
             '{jatuh_tempo}': '20 Agustus 2026',
             '{status}': 'akan jatuh tempo dalam 3 hari',
         };
@@ -106,6 +190,7 @@ document.addEventListener('DOMContentLoaded', () => {
             tenantEditForm.elements.namedItem('move_in').value = button.dataset.moveIn || '';
             tenantEditForm.elements.namedItem('next_due').value = button.dataset.nextDue || '';
             tenantEditForm.elements.namedItem('move_out').value = button.dataset.moveOut || '';
+            tenantEditForm.elements.namedItem('billing_cycle').value = button.dataset.cycle || 'MONTHLY';
             tenantEditForm.elements.namedItem('move_out').required = !active;
             tenantEditRoom.value = currentRoom;
             tenantEditRoom.querySelectorAll('option').forEach(option => {
