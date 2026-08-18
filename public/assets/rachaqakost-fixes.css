@@ -104,6 +104,7 @@
 .cost-behavior-pill.variable{background:#e8eefb;color:#4c63a3}
 .cost-behavior-pill.fixed{background:#edf0ee;color:#65716e}
 .tenant-edit-status{padding:10px 12px;border:1px solid #d5e5df;border-radius:11px;background:#f2f8f5;color:#4d6861;font-size:9px;font-weight:750;line-height:1.5}
+.delete-resource-form{display:grid;gap:6px;margin-top:10px;padding-top:10px;border-top:1px solid #edf0ec}.delete-resource-form .btn{width:100%}.delete-resource-form small{color:var(--muted);font-size:8px;line-height:1.45}.btn:disabled{cursor:not-allowed;opacity:.45;box-shadow:none}
 .category-prices{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin:11px 0}
 .category-prices span{min-width:0;padding:8px 7px;border:1px solid #e3e8e4;border-radius:10px;background:#fafbf9}
 .category-prices small{display:block;color:var(--muted);font-size:7px;font-weight:900;letter-spacing:.05em;text-transform:uppercase}

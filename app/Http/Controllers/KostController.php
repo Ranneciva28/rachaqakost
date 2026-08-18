@@ -15,7 +15,7 @@ class KostController extends Controller
     public function index(Request $request)
     {
         [$reportFrom, $reportTo] = $this->reportRange($request);
-        $rooms = Room::with(['category', 'activeTenant'])->orderBy('floor')->orderBy('number')->get();
+        $rooms = Room::with(['category', 'activeTenant'])->withCount(['tenants', 'maintenances', 'importRows'])->orderBy('floor')->orderBy('number')->get();
         $tenants = Tenant::with('room.category')->where('active', true)->orderBy('next_due')->get();
         $cashflow = collect(range(5, 0))->map(function (int $ago) {
             $date = now()->subMonths($ago);
@@ -50,7 +50,7 @@ class KostController extends Controller
 
     public function storeCategory(Request $request) { $this->ownerOnly($request); RoomCategory::create($this->categoryData($request)); return back()->with('success','Kategori berhasil ditambahkan.'); }
     public function updateCategory(Request $request, RoomCategory $category) { $this->ownerOnly($request); $category->update($this->categoryData($request,$category)); return back()->with('success','Kategori dan harga diperbarui.'); }
-    public function destroyCategory(Request $request, RoomCategory $category) { $this->ownerOnly($request); abort_if($category->rooms()->exists(),422,'Pindahkan semua kamar sebelum menghapus kategori.'); $category->delete(); return back()->with('success','Kategori dihapus.'); }
+    public function destroyCategory(Request $request, RoomCategory $category) { $this->ownerOnly($request); if($category->rooms()->exists())return back()->withErrors(['category'=>'Kategori masih dipakai kamar. Pindahkan atau hapus kamar tersebut lebih dulu.']); $category->delete(); return back()->with('success','Kategori kamar berhasil dihapus.'); }
 
     public function storeRoom(Request $request)
     {
@@ -63,6 +63,18 @@ class KostController extends Controller
         $data=$request->validate(['number'=>['required','max:20',Rule::unique('rooms','number')->ignore($room)],'room_category_id'=>['required','exists:room_categories,id'],'floor'=>['required','integer','min:1','max:99'],'status'=>['required',Rule::in(['KOSONG','TERISI','MAINTENANCE'])]]);
         if($room->activeTenant()->exists()&&$data['status']==='KOSONG') return back()->withErrors(['status'=>'Check-out penghuni dulu sebelum mengosongkan kamar.']);
         $room->update($data); return back()->with('success','Kamar diperbarui.');
+    }
+
+    public function destroyRoom(Request $request, Room $room)
+    {
+        $this->ownerOnly($request);
+        if($room->tenants()->exists())return back()->withErrors(['room'=>'Kamar memiliki data penghuni atau riwayat checkout sehingga tidak dapat dihapus.']);
+        if($room->maintenances()->exists())return back()->withErrors(['room'=>'Kamar memiliki riwayat maintenance sehingga tidak dapat dihapus.']);
+        if($room->importRows()->exists())return back()->withErrors(['room'=>'Kamar masih dipakai dalam batch import. Hapus draft batch terkait lebih dulu.']);
+        $number=$room->number;
+        $room->delete();
+
+        return back()->with('success','Kamar #'.$number.' berhasil dihapus.');
     }
 
     public function tenantIn(Request $request)
