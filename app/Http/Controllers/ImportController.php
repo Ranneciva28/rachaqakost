@@ -3,13 +3,12 @@
 namespace App\Http\Controllers;
 
 use App\Models\{Expense, ExpenseCategory, ImportBatch, ImportRow, Payment, Room, Tenant};
-use App\Services\{ImageLedgerExtractor, LedgerImportService};
+use App\Services\{ImageLedgerExtractor, ImportBatchUndoService, LedgerImportService};
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 
 class ImportController extends Controller
 {
@@ -22,16 +21,17 @@ class ImportController extends Controller
         ]);
     }
 
-    public function show(Request $request, ImportBatch $batch, LedgerImportService $imports)
+    public function show(Request $request, ImportBatch $batch, LedgerImportService $imports, ImportBatchUndoService $undo)
     {
         $this->ownerOnly($request);
         $batch->load(['rows.tenant.room', 'uploader', 'undoer']);
         return view('imports.review', [
             'batch'=>$batch,
-            'tenants'=>Tenant::with('room')->where('active', false)->orderBy('name')->get(),
+            'tenants'=>Tenant::with('room')->where('active', false)->whereNull('import_batch_id')->orderBy('name')->get(),
             'rooms'=>Room::with('category')->orderBy('number')->get(),
             'expenseCategories'=>ExpenseCategory::orderBy('name')->get(),
             'roomGroups'=>$this->roomGroups($batch, $imports),
+            'undoPreview'=>$batch->status === 'COMPLETED' ? $undo->preview($batch) : null,
         ]);
     }
 
@@ -184,6 +184,7 @@ class ImportController extends Controller
                 if ($row->tenant_id) {
                     $tenant=Tenant::findOrFail($row->tenant_id);
                     abort_if($tenant->active,422,'Import historis tidak boleh menggunakan penghuni aktif.');
+                    abort_if($tenant->import_batch_id && $tenant->import_batch_id !== $locked->id, 422, 'Penghuni hasil batch lain tidak dapat dipakai agar setiap batch tetap bisa di-undo secara mandiri.');
                     return $tenant;
                 }
                 if ($existing = $imports->findHistoricalTenant($row)) return $existing;
@@ -250,51 +251,16 @@ class ImportController extends Controller
         return redirect()->route('imports.show', $batch)->with('success', $selected->count().' data historis berhasil masuk tanpa mengubah jatuh tempo penghuni aktif.');
     }
 
-    public function undo(Request $request, ImportBatch $batch, LedgerImportService $imports)
+    public function undo(Request $request, ImportBatch $batch, LedgerImportService $imports, ImportBatchUndoService $undo)
     {
         $this->ownerOnly($request);
         abort_unless($batch->status === 'COMPLETED', 422, 'Hanya batch import yang sudah di-commit yang dapat di-undo.');
 
-        $deleted = DB::transaction(function () use ($batch, $request) {
-            $locked = ImportBatch::whereKey($batch->id)->lockForUpdate()->firstOrFail();
-            abort_unless($locked->status === 'COMPLETED', 422, 'Batch ini sudah di-undo atau belum selesai.');
-
-            $paymentCount = Payment::where('import_batch_id', $locked->id)->count();
-            $expenseCount = Expense::where('import_batch_id', $locked->id)->count();
-            $tenantCount = Tenant::where('import_batch_id', $locked->id)->count();
-            $tenantIds = Tenant::where('import_batch_id', $locked->id)->pluck('id');
-            $usedOutsideBatch = Payment::whereIn('tenant_id', $tenantIds)
-                ->where(function ($query) use ($locked) {
-                    $query->whereNull('import_batch_id')->orWhere('import_batch_id', '!=', $locked->id);
-                })->exists();
-            if ($usedOutsideBatch) {
-                throw ValidationException::withMessages(['batch'=>'Riwayat penghuni dari batch ini sudah dipakai pembayaran lain. Undo pembayaran atau batch terkait lebih dulu.']);
-            }
-
-            ImportRow::where('import_batch_id', $locked->id)->whereNotNull('imported_tenant_id')->update(['tenant_id'=>null]);
-            Payment::where('import_batch_id', $locked->id)->delete();
-            Expense::where('import_batch_id', $locked->id)->delete();
-            Tenant::where('import_batch_id', $locked->id)->delete();
-            ImportRow::where('import_batch_id', $locked->id)->update([
-                'imported_payment_id'=>null,
-                'imported_expense_id'=>null,
-                'imported_tenant_id'=>null,
-            ]);
-
-            $locked->update([
-                'status'=>'DRAFT',
-                'imported_rows'=>0,
-                'undo_count'=>$locked->undo_count + 1,
-                'last_undone_at'=>now(),
-                'last_undone_by'=>$request->user()->id,
-            ]);
-
-            return $paymentCount + $expenseCount + $tenantCount;
-        });
+        $deleted = $undo->undo($batch, $request->user());
 
         $imports->refreshBatch($batch->fresh());
 
-        return redirect()->route('imports.show', $batch)->with('success', $deleted.' transaksi hasil import dibatalkan. Batch kembali menjadi draft dan dapat dikoreksi atau di-commit ulang.');
+        return redirect()->route('imports.show', $batch)->with('success', $deleted['payments'].' pembayaran, '.$deleted['expenses'].' pengeluaran, dan '.$deleted['tenants'].' riwayat penghuni hasil import dibatalkan. Batch kembali menjadi draft.');
     }
 
     public function destroy(Request $request, ImportBatch $batch)
@@ -312,9 +278,6 @@ class ImportController extends Controller
             $out = fopen('php://output', 'w');
             fwrite($out, "\xEF\xBB\xBF");
             fputcsv($out, ['transaction_type','tenant_name','room_number','phone','identity_number','move_in','move_out','transaction_date','amount','billing_cycle','period_count','period_start','method','category','title','notes']);
-            fputcsv($out, ['TENANT','Siti','A.02','081298765432','3273010202020002','2025-11-01','2026-02-28','','','MONTHLY','','','','','','Riwayat penghuni lama']);
-            fputcsv($out, ['PAYMENT','Budi','A.01','081234567890','3273010101010001','2026-01-05','2026-05-31','2026-05-10','1500000','MONTHLY','1','2026-05-01','Transfer','','','Pembayaran Mei']);
-            fputcsv($out, ['EXPENSE','','','','','','','2026-05-12','350000','','','','','Listrik','Token listrik','Meter utama']);
             fclose($out);
         }, 'template-import-rachaqakost.csv', ['Content-Type'=>'text/csv; charset=UTF-8']);
     }

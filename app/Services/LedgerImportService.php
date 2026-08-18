@@ -10,7 +10,9 @@ class LedgerImportService
 {
     public function createRows(ImportBatch $batch, array $sourceRows): void
     {
-        $tenants = Tenant::with('room')->where('active', false)->get();
+        // Penghuni milik batch lain tidak dipakai ulang agar setiap batch tetap
+        // dapat di-undo secara mandiri tanpa menghapus data batch lain.
+        $tenants = Tenant::with('room')->where('active', false)->whereNull('import_batch_id')->get();
         $rooms = Room::all();
         $categories = ExpenseCategory::all();
         $nextRow = 1;
@@ -73,6 +75,7 @@ class LedgerImportService
             if (! $row->amount || (float) $row->amount <= 0) $errors[] = 'Nominal harus lebih dari nol.';
             $linkedTenant=$row->tenant_id?Tenant::find($row->tenant_id):null;
             if($linkedTenant?->active)$errors[] = 'Import historis tidak boleh ditautkan ke penghuni aktif.';
+            if($linkedTenant?->import_batch_id && $linkedTenant->import_batch_id !== $row->import_batch_id)$errors[] = 'Penghuni dari batch lain tidak dapat dipakai agar undo tetap mandiri.';
             if (! $linkedTenant) {
                 $errors = array_merge($errors, $this->tenantHistoryErrors($row, false, false));
             }
@@ -138,6 +141,9 @@ class LedgerImportService
 
         $query=Tenant::where('room_id', $row->room_id)
             ->where('active', false)
+            ->where(function ($query) use ($row) {
+                $query->whereNull('import_batch_id')->orWhere('import_batch_id', $row->import_batch_id);
+            })
             ->whereDate('move_in', $row->tenant_move_in);
         $row->tenant_move_out
             ?$query->whereDate('move_out',$row->tenant_move_out)

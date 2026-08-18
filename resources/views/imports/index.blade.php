@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}">
     <title>RachaqaKost — Import Data</title>
-    <link rel="stylesheet" href="{{ asset('assets/rachaqakost.css') }}"><link rel="stylesheet" href="{{ asset('assets/rachaqakost-fixes.css') }}?v=20260818-cashflow-import">
+    <link rel="stylesheet" href="{{ asset('assets/rachaqakost.css') }}"><link rel="stylesheet" href="{{ asset('assets/rachaqakost-fixes.css') }}?v=20260818-db-export-undo">
 </head>
 <body>
 @php($tabs=['dashboard'=>['⌂','Ringkasan'],'rooms'=>['▦','Kamar'],'tenants'=>['◎','Penghuni'],'payments'=>['↗','Pembayaran'],'expenses'=>['↘','Pengeluaran'],'maintenance'=>['◇','Maintenance'],'users'=>['♙','Tim']])
@@ -12,6 +12,12 @@
 @if(session('success'))<div class="toast">✓ {{ session('success') }}</div>@endif @if($errors->any())<div class="toast error">{{ $errors->first() }}</div>@endif
 
 <section class="import-guard"><span>✓</span><div><b>Jatuh tempo dan kamar aktif tetap aman</b><p>Pembayaran import tidak pernah memajukan <code>next_due</code>. Riwayat penghuni dibuat nonaktif sehingga tidak mengubah status okupansi kamar saat ini. File foto tidak disimpan oleh aplikasi RachaqaKost.</p></div></section>
+
+<section class="database-export-panel panel">
+    <div class="database-export-icon">SQL</div>
+    <div><span class="eyebrow">DATABASE BACKUP</span><h2>Export seluruh database</h2><p>Unduh satu file SQL berisi struktur dan seluruh data aplikasi pada schema <code>public</code>. Simpan file ini di tempat aman karena berisi data penghuni dan user.</p></div>
+    <form method="post" action="{{ route('database.export') }}" onsubmit="return confirm('Download backup SQL terbaru? File ini berisi seluruh data aplikasi dan harus disimpan secara aman.')">@csrf<button class="btn secondary">↓ Download database .SQL</button></form>
+</section>
 
 <section class="import-upload-grid">
     <article class="panel import-upload-card"><div class="import-upload-icon">▧</div><div><span class="eyebrow">VISION AI</span><h2>Foto buku transaksi</h2><p>Ambil sampai 4 foto sekaligus. Tulisan akan diubah menjadi draft baris pendapatan atau pengeluaran.</p></div>
@@ -32,6 +38,6 @@
 </section>
 
 <section class="sectionhead import-history-head"><div><h2>Riwayat batch</h2><p>Draft dapat dilanjutkan; batch selesai disimpan sebagai audit trail.</p></div></section>
-<article class="panel tablewrap"><table class="table"><thead><tr><th>Batch</th><th>Sumber</th><th>Status</th><th>Baris</th><th>Dibuat</th><th>Aksi</th></tr></thead><tbody>@forelse($batches as $batch)<tr><td><strong>#{{ str_pad($batch->id,4,'0',STR_PAD_LEFT) }}</strong><small>{{ collect($batch->original_names)->join(', ') }}</small></td><td><span class="badge {{ $batch->source_type==='IMAGE'?'':'gray' }}">{{ $batch->source_type==='IMAGE'?'Foto AI':'CSV' }}</span></td><td><span class="batch-status {{ strtolower($batch->status) }}">{{ match($batch->status){'DRAFT'=>'Perlu review','COMPLETED'=>'Selesai',default=>'Gagal'} }}</span>@if($batch->undo_count > 0)<small class="batch-undo-history">↶ {{ $batch->undo_count }}× undo · {{ $batch->last_undone_at?->format('d M Y H:i') }}</small>@elseif($batch->error_message)<small>{{ $batch->error_message }}</small>@endif</td><td><strong>{{ $batch->rows_count }}</strong><small>{{ $batch->valid_rows }} valid · {{ $batch->imported_rows }} masuk</small></td><td>{{ $batch->created_at->format('d M Y H:i') }}<small>{{ $batch->uploader->name }}</small></td><td><a class="btn secondary small" href="{{ route('imports.show',$batch) }}">{{ $batch->status==='DRAFT'?'Review':'Lihat' }}</a></td></tr>@empty<tr><td colspan="6" class="empty">Belum ada batch import.</td></tr>@endforelse</tbody></table></article>
+<article class="panel tablewrap"><table class="table"><thead><tr><th>Batch</th><th>Sumber</th><th>Status</th><th>Baris</th><th>Dibuat</th><th>Aksi</th></tr></thead><tbody>@forelse($batches as $batch)<tr><td><strong>#{{ str_pad($batch->id,4,'0',STR_PAD_LEFT) }}</strong><small>{{ collect($batch->original_names)->join(', ') }}</small></td><td><span class="badge {{ $batch->source_type==='IMAGE'?'':'gray' }}">{{ $batch->source_type==='IMAGE'?'Foto AI':'CSV' }}</span></td><td><span class="batch-status {{ strtolower($batch->status) }}">{{ match($batch->status){'DRAFT'=>'Perlu review','COMPLETED'=>'Selesai',default=>'Gagal'} }}</span>@if($batch->undo_count > 0)<small class="batch-undo-history">↶ {{ $batch->undo_count }}× undo · {{ $batch->last_undone_at?->format('d M Y H:i') }}</small>@elseif($batch->error_message)<small>{{ $batch->error_message }}</small>@endif</td><td><strong>{{ $batch->rows_count }}</strong><small>{{ $batch->valid_rows }} valid · {{ $batch->imported_rows }} masuk</small></td><td>{{ $batch->created_at->format('d M Y H:i') }}<small>{{ $batch->uploader->name }}</small></td><td><div class="batch-actions"><a class="btn secondary small" href="{{ route('imports.show',$batch) }}">{{ $batch->status==='DRAFT'?'Review':'Lihat' }}</a>@if($batch->status==='COMPLETED')<form method="post" action="{{ route('imports.undo',$batch) }}" onsubmit="return confirm('Undo batch #{{ $batch->id }}? Semua pembayaran, pengeluaran, dan riwayat penghuni sumber batch ini akan dibatalkan.')">@csrf<button class="btn danger small">↶ Undo</button></form>@endif</div></td></tr>@empty<tr><td colspan="6" class="empty">Belum ada batch import.</td></tr>@endforelse</tbody></table></article>
 </main><nav class="mobile"><a href="{{ route('dashboard') }}"><b>⌂</b>Ringkasan</a><a href="{{ route('finance') }}"><b>Rp</b>Keuangan</a><a href="{{ route('imports.index') }}" class="active"><b>⇧</b>Import</a></nav></div>
-<script src="{{ asset('assets/rachaqakost.js') }}?v=20260818-cashflow-import"></script></body></html>
+<script src="{{ asset('assets/rachaqakost.js') }}?v=20260818-db-export-undo"></script></body></html>
