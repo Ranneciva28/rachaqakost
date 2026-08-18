@@ -195,7 +195,7 @@ class ImportController extends Controller
                     'identity_number'=>$row->tenant_identity_number,
                     'move_in'=>$row->tenant_move_in,
                     'move_out'=>$row->tenant_move_out,
-                    'next_due'=>$row->tenant_move_out,
+                    'next_due'=>$row->tenant_move_out ?: $row->period_start ?: $row->transaction_date ?: $row->tenant_move_in,
                     'billing_cycle'=>$row->billing_cycle ?: 'MONTHLY',
                     'active'=>false,
                     'import_batch_id'=>$locked->id,
@@ -348,21 +348,29 @@ class ImportController extends Controller
     private function roomGroups(ImportBatch $batch, LedgerImportService $imports): array
     {
         $groups=[];
+        $rooms=Room::all();
         foreach($batch->rows as $row){
             if(!in_array($row->transaction_type,['PAYMENT','TENANT'],true))continue;
             $source=$imports->sourceRoomNumber($row->raw_data??[]);
             if(!$source)continue;
             $key=$imports->roomMappingKey($source);
-            if(!isset($groups[$key]))$groups[$key]=[
-                'key'=>$key,
-                'source'=>$source,
-                'count'=>0,
-                'row_ids'=>[],
-                'room_id'=>$row->room_id,
-            ];
+            if(!isset($groups[$key])){
+                $matchedRoom=$row->room_id?null:$imports->matchRoomNumber($rooms,$source);
+                $groups[$key]=[
+                    'key'=>$key,
+                    'source'=>$source,
+                    'count'=>0,
+                    'row_ids'=>[],
+                    'room_id'=>$row->room_id ?: $matchedRoom?->id,
+                    'auto_matched'=>!$row->room_id&&$matchedRoom!==null,
+                ];
+            }
             $groups[$key]['count']++;
             $groups[$key]['row_ids'][]=$row->id;
-            if(!$groups[$key]['room_id']&&$row->room_id)$groups[$key]['room_id']=$row->room_id;
+            if(!$groups[$key]['room_id']&&$row->room_id){
+                $groups[$key]['room_id']=$row->room_id;
+                $groups[$key]['auto_matched']=false;
+            }
         }
 
         return array_values($groups);

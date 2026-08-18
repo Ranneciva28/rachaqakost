@@ -18,7 +18,7 @@ class LedgerImportService
         foreach ($sourceRows as $source) {
             $type = $this->type($source['transaction_type'] ?? $source['jenis'] ?? null);
             $tenant = $type === 'PAYMENT' ? $this->matchTenant($tenants, $source) : null;
-            $room = $tenant?->room ?: $this->matchRoom($rooms, $this->sourceRoomNumber($source));
+            $room = $tenant?->room ?: $this->matchRoomNumber($rooms, $this->sourceRoomNumber($source));
             $category = $type === 'EXPENSE' ? $this->matchCategory($categories, $source['category'] ?? $source['kategori'] ?? null) : null;
             $cycle = $this->cycle($source['billing_cycle'] ?? $source['siklus'] ?? null) ?: ($tenant?->billing_cycle ?? 'MONTHLY');
             $date = $this->date($source['transaction_date'] ?? $source['tanggal'] ?? $source['paid_at'] ?? $source['spent_at'] ?? null);
@@ -74,7 +74,7 @@ class LedgerImportService
             $linkedTenant=$row->tenant_id?Tenant::find($row->tenant_id):null;
             if($linkedTenant?->active)$errors[] = 'Import historis tidak boleh ditautkan ke penghuni aktif.';
             if (! $linkedTenant) {
-                $errors = array_merge($errors, $this->tenantHistoryErrors($row));
+                $errors = array_merge($errors, $this->tenantHistoryErrors($row, false, false));
             }
             if (! in_array($row->billing_cycle, ['DAILY','WEEKLY','MONTHLY'], true)) $errors[] = 'Pilih siklus pembayaran.';
             if (! $row->period_start) $errors[] = 'Periode awal wajib diisi.';
@@ -134,12 +134,16 @@ class LedgerImportService
 
     public function findHistoricalTenant(ImportRow $row): ?Tenant
     {
-        if (! $row->room_id || ! $row->tenant_name || ! $row->tenant_move_in || ! $row->tenant_move_out) return null;
+        if (! $row->room_id || ! $row->tenant_name || ! $row->tenant_move_in) return null;
 
-        return Tenant::where('room_id', $row->room_id)
+        $query=Tenant::where('room_id', $row->room_id)
             ->where('active', false)
-            ->whereDate('move_in', $row->tenant_move_in)
-            ->whereDate('move_out', $row->tenant_move_out)
+            ->whereDate('move_in', $row->tenant_move_in);
+        $row->tenant_move_out
+            ?$query->whereDate('move_out',$row->tenant_move_out)
+            :$query->whereNull('move_out');
+
+        return $query
             ->get()
             ->first(fn (Tenant $tenant) => $this->normalize($tenant->name) === $this->normalize($row->tenant_name));
     }
@@ -218,7 +222,7 @@ class LedgerImportService
         return $categories->first(fn (ExpenseCategory $category) => $this->normalize($category->name) === $name);
     }
 
-    private function matchRoom($rooms, mixed $value): ?Room
+    public function matchRoomNumber($rooms, mixed $value): ?Room
     {
         $number = $this->normalizeRoomNumber($value);
         if (! $number) return null;
@@ -244,17 +248,22 @@ class LedgerImportService
     {
         $value=Str::lower(Str::ascii(trim((string)$value)));
         $value=preg_replace('/^(kamar|room|unit|nomor|no)[\s._#:-]*/','',$value);
+        preg_match_all('/[a-z]+|\d+/',$value,$matches);
+        $tokens=array_map(
+            fn(string $token)=>ctype_digit($token)?(string)((int)$token):$token,
+            $matches[0],
+        );
 
-        return preg_replace('/[^a-z0-9]+/','',$value);
+        return implode('|',$tokens);
     }
 
-    private function tenantHistoryErrors(ImportRow $row, bool $rejectExisting = false): array
+    private function tenantHistoryErrors(ImportRow $row, bool $rejectExisting = false, bool $requireMoveOut = true): array
     {
         $errors = [];
         if (! trim((string) $row->tenant_name)) $errors[] = 'Nama penghuni wajib diisi.';
         if (! $row->room_id || ! Room::whereKey($row->room_id)->exists()) $errors[] = 'Pilih kamar yang sesuai.';
         if (! $row->tenant_move_in) $errors[] = 'Tanggal masuk wajib diisi.';
-        if (! $row->tenant_move_out) $errors[] = 'Tanggal keluar wajib diisi untuk riwayat checkout.';
+        if ($requireMoveOut && ! $row->tenant_move_out) $errors[] = 'Tanggal keluar wajib diisi untuk riwayat checkout.';
         if ($row->tenant_move_in && $row->tenant_move_out && $row->tenant_move_out->lt($row->tenant_move_in)) $errors[] = 'Tanggal keluar tidak boleh sebelum tanggal masuk.';
         if (! in_array($row->billing_cycle, ['DAILY','WEEKLY','MONTHLY'], true)) $errors[] = 'Pilih siklus sewa.';
 

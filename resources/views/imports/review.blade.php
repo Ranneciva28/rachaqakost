@@ -16,7 +16,7 @@
     <form method="post" action="{{ route('imports.rooms',$batch) }}">@csrf @method('PATCH')
         <div class="room-mapping-grid">
             @foreach($roomGroups as $group)
-            <label><span><b>{{ $group['source'] }}</b><small>{{ $group['count'] }} baris</small></span><select name="room_map[{{ $group['key'] }}]"><option value="">Belum dipetakan</option>@foreach($rooms as $room)<option value="{{ $room->id }}" @selected((int)$group['room_id']===(int)$room->id)>#{{ $room->number }} · {{ $room->category->name }}</option>@endforeach</select></label>
+            <label><span><b>{{ $group['source'] }}</b><small>{{ $group['count'] }} baris @if($group['auto_matched'])<em>✓ Cocok otomatis</em>@endif</small></span><select name="room_map[{{ $group['key'] }}]"><option value="">Belum dipetakan</option>@foreach($rooms as $room)<option value="{{ $room->id }}" @selected((int)$group['room_id']===(int)$room->id)>#{{ $room->number }} · {{ $room->category->name }}</option>@endforeach</select></label>
             @endforeach
         </div>
         <button class="btn secondary">Terapkan ke semua baris</button>
@@ -37,7 +37,7 @@
             <div class="field tenant-fields"><label>No. HP / WhatsApp (opsional)</label><input name="rows[{{ $row->id }}][tenant_phone]" value="{{ $row->tenant_phone }}" maxlength="30" @readonly(!$draft)></div>
             <div class="field tenant-fields"><label>No. identitas (opsional)</label><input name="rows[{{ $row->id }}][tenant_identity_number]" value="{{ $row->tenant_identity_number }}" maxlength="40" @readonly(!$draft)></div>
             <div class="field tenant-fields"><label>Tanggal masuk</label><input type="date" name="rows[{{ $row->id }}][tenant_move_in]" value="{{ $row->tenant_move_in?->toDateString() }}" @readonly(!$draft)></div>
-            <div class="field tenant-fields"><label>Tanggal keluar</label><input type="date" name="rows[{{ $row->id }}][tenant_move_out]" value="{{ $row->tenant_move_out?->toDateString() }}" @readonly(!$draft)></div>
+            <div class="field tenant-fields"><label>Tanggal keluar <small>(opsional untuk pembayaran)</small></label><input type="date" name="rows[{{ $row->id }}][tenant_move_out]" value="{{ $row->tenant_move_out?->toDateString() }}" @readonly(!$draft)></div>
             <div class="field expense-only"><label>Kategori pengeluaran</label><select name="rows[{{ $row->id }}][expense_category]" @disabled(!$draft)><option value="">Pilih kategori</option>@foreach($expenseCategories as $category)<option value="{{ $category->name }}" @selected($row->expense_category===$category->name)>{{ $category->name }}</option>@endforeach</select></div>
             <div class="field financial-only"><label>Tanggal transaksi</label><input type="date" name="rows[{{ $row->id }}][transaction_date]" value="{{ $row->transaction_date?->toDateString() }}" @readonly(!$draft)></div>
             <div class="field financial-only"><label>Nominal</label><div class="currency-input"><span>Rp</span><input type="text" name="rows[{{ $row->id }}][amount]" data-currency inputmode="numeric" value="{{ $row->amount?number_format((float)$row->amount,0,',','.') : '' }}" @readonly(!$draft)></div></div>
