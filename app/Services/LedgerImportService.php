@@ -10,7 +10,7 @@ class LedgerImportService
 {
     public function createRows(ImportBatch $batch, array $sourceRows): void
     {
-        $tenants = Tenant::with('room')->get();
+        $tenants = Tenant::with('room')->where('active', false)->get();
         $rooms = Room::all();
         $categories = ExpenseCategory::all();
         $nextRow = 1;
@@ -18,7 +18,7 @@ class LedgerImportService
         foreach ($sourceRows as $source) {
             $type = $this->type($source['transaction_type'] ?? $source['jenis'] ?? null);
             $tenant = $type === 'PAYMENT' ? $this->matchTenant($tenants, $source) : null;
-            $room = $tenant?->room ?: $this->matchRoom($rooms, $source['room_number'] ?? $source['kamar'] ?? null);
+            $room = $tenant?->room ?: $this->matchRoom($rooms, $this->sourceRoomNumber($source));
             $category = $type === 'EXPENSE' ? $this->matchCategory($categories, $source['category'] ?? $source['kategori'] ?? null) : null;
             $cycle = $this->cycle($source['billing_cycle'] ?? $source['siklus'] ?? null) ?: ($tenant?->billing_cycle ?? 'MONTHLY');
             $date = $this->date($source['transaction_date'] ?? $source['tanggal'] ?? $source['paid_at'] ?? $source['spent_at'] ?? null);
@@ -71,7 +71,9 @@ class LedgerImportService
         if ($row->transaction_type === 'PAYMENT') {
             if (! $row->transaction_date) $errors[] = 'Tanggal transaksi wajib diisi.';
             if (! $row->amount || (float) $row->amount <= 0) $errors[] = 'Nominal harus lebih dari nol.';
-            if (! $row->tenant_id || ! Tenant::whereKey($row->tenant_id)->exists()) {
+            $linkedTenant=$row->tenant_id?Tenant::find($row->tenant_id):null;
+            if($linkedTenant?->active)$errors[] = 'Import historis tidak boleh ditautkan ke penghuni aktif.';
+            if (! $linkedTenant) {
                 $errors = array_merge($errors, $this->tenantHistoryErrors($row));
             }
             if (! in_array($row->billing_cycle, ['DAILY','WEEKLY','MONTHLY'], true)) $errors[] = 'Pilih siklus pembayaran.';
@@ -135,6 +137,7 @@ class LedgerImportService
         if (! $row->room_id || ! $row->tenant_name || ! $row->tenant_move_in || ! $row->tenant_move_out) return null;
 
         return Tenant::where('room_id', $row->room_id)
+            ->where('active', false)
             ->whereDate('move_in', $row->tenant_move_in)
             ->whereDate('move_out', $row->tenant_move_out)
             ->get()
@@ -193,14 +196,14 @@ class LedgerImportService
     private function matchTenant($tenants, array $source): ?Tenant
     {
         $name = $this->normalize($source['tenant_name'] ?? $source['penghuni'] ?? $source['nama'] ?? null);
-        $room = $this->normalize($source['room_number'] ?? $source['kamar'] ?? null);
+        $room = $this->normalizeRoomNumber($this->sourceRoomNumber($source));
         $moveIn = $this->date($source['move_in'] ?? $source['tanggal_masuk'] ?? null);
         $moveOut = $this->date($source['move_out'] ?? $source['tanggal_keluar'] ?? null);
         if (! $name && ! $room) return null;
 
         $matches = $tenants->filter(function (Tenant $tenant) use ($name, $room, $moveIn, $moveOut) {
             $nameMatches = ! $name || $this->normalize($tenant->name) === $name;
-            $roomMatches = ! $room || $this->normalize($tenant->room?->number) === $room;
+            $roomMatches = ! $room || $this->normalizeRoomNumber($tenant->room?->number) === $room;
             $moveInMatches = ! $moveIn || $tenant->move_in?->toDateString() === $moveIn;
             $moveOutMatches = ! $moveOut || $tenant->move_out?->toDateString() === $moveOut;
             return $nameMatches && $roomMatches && $moveInMatches && $moveOutMatches;
@@ -217,9 +220,32 @@ class LedgerImportService
 
     private function matchRoom($rooms, mixed $value): ?Room
     {
-        $number = $this->normalize($value);
+        $number = $this->normalizeRoomNumber($value);
         if (! $number) return null;
-        return $rooms->first(fn (Room $room) => $this->normalize($room->number) === $number);
+        return $rooms->first(fn (Room $room) => $this->normalizeRoomNumber($room->number) === $number);
+    }
+
+    public function sourceRoomNumber(array $source): ?string
+    {
+        foreach (['room_number','nomor_kamar','no_kamar','kamar','room','unit','nomor_unit','no_unit'] as $key) {
+            $value=trim((string)($source[$key]??''));
+            if($value!=='')return $value;
+        }
+
+        return null;
+    }
+
+    public function roomMappingKey(mixed $value): string
+    {
+        return sha1($this->normalizeRoomNumber($value));
+    }
+
+    private function normalizeRoomNumber(mixed $value): string
+    {
+        $value=Str::lower(Str::ascii(trim((string)$value)));
+        $value=preg_replace('/^(kamar|room|unit|nomor|no)[\s._#:-]*/','',$value);
+
+        return preg_replace('/[^a-z0-9]+/','',$value);
     }
 
     private function tenantHistoryErrors(ImportRow $row, bool $rejectExisting = false): array

@@ -60,7 +60,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const paymentMode = document.getElementById('paymentMode');
     const paymentModeHelp = document.getElementById('paymentModeHelp');
     const historicalFields = document.getElementById('historicalPaymentFields');
-    const historicalCycle = document.getElementById('historicalBillingCycle');
+    const paymentCycle = document.getElementById('paymentBillingCycle');
     const historicalPeriodStart = document.getElementById('historicalPeriodStart');
     const periodsInput = document.getElementById('paymentPeriods');
     const periodsLabel = document.getElementById('paymentPeriodsLabel');
@@ -74,7 +74,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const option = tenantSelect.selectedOptions[0];
         const historical = paymentMode?.value === 'HISTORICAL';
         const due = historical ? historicalPeriodStart?.value : option?.dataset.due;
-        const cycle = historical ? (historicalCycle?.value || 'MONTHLY') : (option?.dataset.cycle || 'MONTHLY');
+        const cycle = paymentCycle?.value || option?.dataset.cycle || 'MONTHLY';
         const periods = Math.max(1, Number(periodsInput.value) || 1);
         const cycleConfig = {
             DAILY: {label: 'Jumlah hari', max: 365, help: 'Tarif harian × jumlah hari.'},
@@ -108,7 +108,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 : `${dateFormatter.format(start)} – ${dateFormatter.format(end)}`;
         }
 
-        const price = historical ? option?.dataset[cycle.toLowerCase()] : option?.dataset.price;
+        const price = option?.dataset[cycle.toLowerCase()];
         if (paymentAmount && price) {
             const autoValue = String(Number(price) * count);
             paymentAmount.value = autoValue;
@@ -120,7 +120,6 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!paymentMode || !tenantSelect) return;
         const historical = paymentMode.value === 'HISTORICAL';
         if (historicalFields) historicalFields.hidden = !historical;
-        if (historicalCycle) historicalCycle.required = historical;
         if (historicalPeriodStart) historicalPeriodStart.required = historical;
         tenantSelect.querySelectorAll('option').forEach(option => {
             option.disabled = !historical && option.value !== '' && option.dataset.active !== '1';
@@ -131,10 +130,26 @@ document.addEventListener('DOMContentLoaded', () => {
             : 'Pembayaran reguler memajukan jatuh tempo penghuni sesuai jumlah periode.';
         updatePaymentPeriod();
     };
-    tenantSelect?.addEventListener('change', updatePaymentPeriod);
+    const updatePaymentTenant = () => {
+        const option = tenantSelect?.selectedOptions[0];
+        if (paymentCycle && option?.value) {
+            paymentCycle.value = option.dataset.cycle || 'MONTHLY';
+            paymentCycle.querySelectorAll('option').forEach(cycleOption => {
+                cycleOption.disabled = Number(option.dataset[cycleOption.value.toLowerCase()] || 0) <= 0;
+            });
+            if (paymentCycle.selectedOptions[0]?.disabled) {
+                const available = [...paymentCycle.options].find(cycleOption => !cycleOption.disabled);
+                if (available) paymentCycle.value = available.value;
+            }
+        } else {
+            paymentCycle?.querySelectorAll('option').forEach(cycleOption => cycleOption.disabled = false);
+        }
+        updatePaymentPeriod();
+    };
+    tenantSelect?.addEventListener('change', updatePaymentTenant);
     periodsInput?.addEventListener('input', updatePaymentPeriod);
     paymentMode?.addEventListener('change', updatePaymentMode);
-    historicalCycle?.addEventListener('change', updatePaymentPeriod);
+    paymentCycle?.addEventListener('change', updatePaymentPeriod);
     historicalPeriodStart?.addEventListener('change', updatePaymentPeriod);
     updatePaymentMode();
 
@@ -234,6 +249,23 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const cashflowValue = document.getElementById('cashflowValue');
+    document.querySelectorAll('.cashflow-filter').forEach(form => {
+        const from = form.querySelector('[name="cashflow_from"]');
+        const to = form.querySelector('[name="cashflow_to"]');
+        const syncCashflowLimit = () => {
+            const start = parseLocalDate(from?.value);
+            if (!start || !to) return;
+            const latest = new Date(start);
+            latest.setFullYear(latest.getFullYear() + 1);
+            latest.setDate(latest.getDate() - 1);
+            to.min = from.value;
+            to.max = toDateValue(latest);
+            if (to.value && to.value > to.max) to.value = to.max;
+            if (to.value && to.value < to.min) to.value = to.min;
+        };
+        from?.addEventListener('change', syncCashflowLimit);
+        syncCashflowLimit();
+    });
     document.querySelectorAll('[data-cashflow-bar]').forEach(bar => {
         bar.addEventListener('click', () => {
             document.querySelectorAll('[data-cashflow-bar]').forEach(item => item.classList.remove('active'));

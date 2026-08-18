@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}">
     <title>RachaqaKost — Import Data</title>
-    <link rel="stylesheet" href="{{ asset('assets/rachaqakost.css') }}"><link rel="stylesheet" href="{{ asset('assets/rachaqakost-fixes.css') }}?v=20260818-tenant-history">
+    <link rel="stylesheet" href="{{ asset('assets/rachaqakost.css') }}"><link rel="stylesheet" href="{{ asset('assets/rachaqakost-fixes.css') }}?v=20260818-cashflow-import">
 </head>
 <body>
 @php($tabs=['dashboard'=>['⌂','Ringkasan'],'rooms'=>['▦','Kamar'],'tenants'=>['◎','Penghuni'],'payments'=>['↗','Pembayaran'],'expenses'=>['↘','Pengeluaran'],'maintenance'=>['◇','Maintenance'],'users'=>['♙','Tim']])
@@ -22,7 +22,7 @@
             <button class="btn" @disabled(!$visionReady)>Baca foto & buat draft</button>
         </form>
     </article>
-    <article class="panel import-upload-card"><div class="import-upload-icon csv">CSV</div><div><span class="eyebrow">BULK FILE</span><h2>Spreadsheet / CSV</h2><p>Template baru bisa langsung membuat riwayat checkout dari nama, kamar, tanggal masuk, dan tanggal keluar—tanpa memilih penghuni manual.</p></div>
+    <article class="panel import-upload-card"><div class="import-upload-icon csv">CSV</div><div><span class="eyebrow">BULK FILE</span><h2>Spreadsheet / CSV</h2><p>Nomor kamar dari kolom <code>room_number</code>, <code>nomor_kamar</code>, <code>no_kamar</code>, atau <code>kamar</code> dicocokkan otomatis. Data masuk sebagai histori tanpa menyentuh penghuni aktif.</p></div>
         <a class="btn secondary import-template" href="{{ route('imports.template') }}">↓ Download template CSV</a>
         <form class="form import-upload-form" method="post" action="{{ route('imports.csv') }}" enctype="multipart/form-data">@csrf
             <label class="file-drop"><input type="file" name="csv" accept=".csv,text/csv" required><b>Pilih file CSV</b><small>Maksimal 1.000 baris · ukuran 10 MB</small></label>
@@ -34,4 +34,4 @@
 <section class="sectionhead import-history-head"><div><h2>Riwayat batch</h2><p>Draft dapat dilanjutkan; batch selesai disimpan sebagai audit trail.</p></div></section>
 <article class="panel tablewrap"><table class="table"><thead><tr><th>Batch</th><th>Sumber</th><th>Status</th><th>Baris</th><th>Dibuat</th><th>Aksi</th></tr></thead><tbody>@forelse($batches as $batch)<tr><td><strong>#{{ str_pad($batch->id,4,'0',STR_PAD_LEFT) }}</strong><small>{{ collect($batch->original_names)->join(', ') }}</small></td><td><span class="badge {{ $batch->source_type==='IMAGE'?'':'gray' }}">{{ $batch->source_type==='IMAGE'?'Foto AI':'CSV' }}</span></td><td><span class="batch-status {{ strtolower($batch->status) }}">{{ match($batch->status){'DRAFT'=>'Perlu review','COMPLETED'=>'Selesai',default=>'Gagal'} }}</span>@if($batch->undo_count > 0)<small class="batch-undo-history">↶ {{ $batch->undo_count }}× undo · {{ $batch->last_undone_at?->format('d M Y H:i') }}</small>@elseif($batch->error_message)<small>{{ $batch->error_message }}</small>@endif</td><td><strong>{{ $batch->rows_count }}</strong><small>{{ $batch->valid_rows }} valid · {{ $batch->imported_rows }} masuk</small></td><td>{{ $batch->created_at->format('d M Y H:i') }}<small>{{ $batch->uploader->name }}</small></td><td><a class="btn secondary small" href="{{ route('imports.show',$batch) }}">{{ $batch->status==='DRAFT'?'Review':'Lihat' }}</a></td></tr>@empty<tr><td colspan="6" class="empty">Belum ada batch import.</td></tr>@endforelse</tbody></table></article>
 </main><nav class="mobile"><a href="{{ route('dashboard') }}"><b>⌂</b>Ringkasan</a><a href="{{ route('finance') }}"><b>Rp</b>Keuangan</a><a href="{{ route('imports.index') }}" class="active"><b>⇧</b>Import</a></nav></div>
-<script src="{{ asset('assets/rachaqakost.js') }}?v=20260818-tenant-history"></script></body></html>
+<script src="{{ asset('assets/rachaqakost.js') }}?v=20260818-cashflow-import"></script></body></html>

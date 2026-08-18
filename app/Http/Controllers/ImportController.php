@@ -22,16 +22,39 @@ class ImportController extends Controller
         ]);
     }
 
-    public function show(Request $request, ImportBatch $batch)
+    public function show(Request $request, ImportBatch $batch, LedgerImportService $imports)
     {
         $this->ownerOnly($request);
         $batch->load(['rows.tenant.room', 'uploader', 'undoer']);
         return view('imports.review', [
             'batch'=>$batch,
-            'tenants'=>Tenant::with('room')->orderByDesc('active')->orderBy('name')->get(),
+            'tenants'=>Tenant::with('room')->where('active', false)->orderBy('name')->get(),
             'rooms'=>Room::with('category')->orderBy('number')->get(),
             'expenseCategories'=>ExpenseCategory::orderBy('name')->get(),
+            'roomGroups'=>$this->roomGroups($batch, $imports),
         ]);
+    }
+
+    public function mapRooms(Request $request, ImportBatch $batch, LedgerImportService $imports)
+    {
+        $this->ownerOnly($request);
+        abort_unless($batch->status === 'DRAFT', 422, 'Pemetaan kamar hanya dapat diubah saat batch masih draft.');
+        $data=$request->validate([
+            'room_map'=>['required','array'],
+            'room_map.*'=>['nullable','exists:rooms,id'],
+        ]);
+        $groups=collect($this->roomGroups($batch, $imports))->keyBy('key');
+
+        foreach($data['room_map'] as $key=>$roomId){
+            $group=$groups->get($key);
+            if(!$group||!filled($roomId))continue;
+            ImportRow::where('import_batch_id',$batch->id)
+                ->whereIn('id',$group['row_ids'])
+                ->update(['room_id'=>(int)$roomId]);
+        }
+        $imports->refreshBatch($batch);
+
+        return redirect()->route('imports.show',$batch)->with('success','Pemetaan kamar diterapkan ke seluruh baris dengan nomor kamar yang sama.');
     }
 
     public function uploadImages(Request $request, ImageLedgerExtractor $extractor, LedgerImportService $imports)
@@ -158,7 +181,11 @@ class ImportController extends Controller
             abort_unless($locked->status === 'DRAFT', 422, 'Batch sudah pernah diproses.');
             $imported = 0;
             $resolveTenant = function (ImportRow $row) use ($locked, $imports) {
-                if ($row->tenant_id) return Tenant::findOrFail($row->tenant_id);
+                if ($row->tenant_id) {
+                    $tenant=Tenant::findOrFail($row->tenant_id);
+                    abort_if($tenant->active,422,'Import historis tidak boleh menggunakan penghuni aktif.');
+                    return $tenant;
+                }
                 if ($existing = $imports->findHistoricalTenant($row)) return $existing;
 
                 return Tenant::create([
@@ -316,5 +343,28 @@ class ImportController extends Controller
     private function ownerOnly(Request $request): void
     {
         abort_unless($request->user()->isOwner(), 403);
+    }
+
+    private function roomGroups(ImportBatch $batch, LedgerImportService $imports): array
+    {
+        $groups=[];
+        foreach($batch->rows as $row){
+            if(!in_array($row->transaction_type,['PAYMENT','TENANT'],true))continue;
+            $source=$imports->sourceRoomNumber($row->raw_data??[]);
+            if(!$source)continue;
+            $key=$imports->roomMappingKey($source);
+            if(!isset($groups[$key]))$groups[$key]=[
+                'key'=>$key,
+                'source'=>$source,
+                'count'=>0,
+                'row_ids'=>[],
+                'room_id'=>$row->room_id,
+            ];
+            $groups[$key]['count']++;
+            $groups[$key]['row_ids'][]=$row->id;
+            if(!$groups[$key]['room_id']&&$row->room_id)$groups[$key]['room_id']=$row->room_id;
+        }
+
+        return array_values($groups);
     }
 }

@@ -15,13 +15,10 @@ class KostController extends Controller
     public function index(Request $request)
     {
         [$reportFrom, $reportTo] = $this->reportRange($request);
+        [$cashflowFrom, $cashflowTo] = $this->cashflowRange($request);
         $rooms = Room::with(['category', 'activeTenant'])->withCount(['tenants', 'maintenances', 'importRows'])->orderBy('floor')->orderBy('number')->get();
         $tenants = Tenant::with('room.category')->where('active', true)->orderBy('next_due')->get();
-        $cashflow = collect(range(5, 0))->map(function (int $ago) {
-            $date = now()->subMonths($ago);
-            $range = [$date->copy()->startOfMonth(), $date->copy()->endOfMonth()];
-            return ['label'=>$date->translatedFormat('M'),'income'=>(float)Payment::whereBetween('paid_at',$range)->sum('amount'),'expense'=>(float)Expense::whereBetween('spent_at',$range)->sum('amount')];
-        });
+        [$cashflow, $cashflowGranularity] = $this->cashflowSeries($cashflowFrom, $cashflowTo);
         $incomeQuery = Payment::whereBetween('paid_at', [$reportFrom->toDateString(), $reportTo->toDateString()]);
         $expenseQuery = Expense::whereBetween('spent_at', [$reportFrom->toDateString(), $reportTo->toDateString()]);
         $income = (float) (clone $incomeQuery)->sum('amount');
@@ -41,6 +38,7 @@ class KostController extends Controller
             'income'=>$income, 'expenseTotal'=>$expenseTotal, 'profit'=>$income-$expenseTotal,
             'incomeTransactionCount'=>(clone $incomeQuery)->count(), 'expenseTransactionCount'=>(clone $expenseQuery)->count(),
             'reportFrom'=>$reportFrom, 'reportTo'=>$reportTo,
+            'cashflowFrom'=>$cashflowFrom, 'cashflowTo'=>$cashflowTo, 'cashflowGranularity'=>$cashflowGranularity,
             'dueSoon'=>$tenants->filter(fn(Tenant $t)=>$t->next_due->lte(now()->addDays(7))),
             'cashflow'=>$cashflow, 'maxCashflow'=>max(1,(float)$cashflow->flatMap(fn($p)=>[$p['income'],$p['expense']])->max()),
             'users'=>$request->user()->isOwner()?User::orderBy('name')->get():collect(),
@@ -133,14 +131,14 @@ class KostController extends Controller
     public function payment(Request $request)
     {
         $this->normalizeCurrencyFields($request, ['amount']);
-        $data=$request->validate(['tenant_id'=>['required','exists:tenants,id'],'amount'=>['required','numeric','min:1'],'paid_at'=>['required','date'],'method'=>['required',Rule::in(['Transfer','Cash','QRIS'])],'periods'=>['required','integer','min:1','max:365'],'payment_mode'=>['required',Rule::in(['REGULAR','HISTORICAL'])],'billing_cycle'=>['nullable',Rule::in(['DAILY','WEEKLY','MONTHLY'])],'period_start'=>['nullable','date']]);
+        $data=$request->validate(['tenant_id'=>['required','exists:tenants,id'],'amount'=>['required','numeric','min:1'],'paid_at'=>['required','date'],'method'=>['required',Rule::in(['Transfer','Cash','QRIS'])],'periods'=>['required','integer','min:1','max:365'],'payment_mode'=>['required',Rule::in(['REGULAR','HISTORICAL'])],'billing_cycle'=>['required',Rule::in(['DAILY','WEEKLY','MONTHLY'])],'period_start'=>['nullable','date']]);
         DB::transaction(function()use($data,$request){
             $tenant=Tenant::with('room.category')->findOrFail($data['tenant_id']);
             $historical=$data['payment_mode']==='HISTORICAL';
             abort_if(!$historical&&!$tenant->active,422,'Pembayaran reguler hanya dapat dicatat untuk penghuni aktif.');
             abort_if($historical&&empty($data['period_start']),422,'Periode awal wajib diisi untuk pembayaran historis.');
-            abort_if($historical&&empty($data['billing_cycle']),422,'Siklus wajib dipilih untuk pembayaran historis.');
-            $cycle=$historical?$data['billing_cycle']:$tenant->billing_cycle;
+            $cycle=$data['billing_cycle'];
+            abort_if($this->billingRate($tenant->room,$cycle)<=0,422,'Tarif untuk siklus pembayaran tersebut belum diatur pada kategori kamar.');
             $limit=match($cycle){'DAILY'=>365,'WEEKLY'=>52,default=>24};
             abort_if((int)$data['periods']>$limit,422,'Jumlah periode melebihi batas untuk siklus tagihan ini.');
             $periodStart=Carbon::parse($historical?$data['period_start']:$tenant->next_due);
@@ -158,7 +156,7 @@ class KostController extends Controller
                 'coverage_start'=>$periodStart,
                 'coverage_end'=>$coverageEnd,
             ]);
-            if(!$historical)$tenant->update(['next_due'=>$nextDue]);
+            if(!$historical)$tenant->update(['next_due'=>$nextDue,'billing_cycle'=>$cycle]);
         });
         return back()->with('success',$data['payment_mode']==='HISTORICAL'?'Pembayaran historis tersimpan tanpa mengubah jatuh tempo.':'Pembayaran tersimpan; jatuh tempo otomatis diperbarui.');
     }
@@ -236,6 +234,53 @@ class KostController extends Controller
     private function categoryData(Request $request,?RoomCategory $category=null):array { $this->normalizeCurrencyFields($request,['daily_price','weekly_price','monthly_price']); return $request->validate(['name'=>['required','max:80',Rule::unique('room_categories','name')->ignore($category)],'daily_price'=>['required','numeric','min:0'],'weekly_price'=>['required','numeric','min:0'],'monthly_price'=>['required','numeric','min:0'],'color'=>['required','regex:/^#[0-9A-Fa-f]{6}$/']]); }
     private function expenseCategoryData(Request $request,?ExpenseCategory $category=null):array { return $request->validate(['name'=>['required','max:60',Rule::unique('expense_categories','name')->ignore($category)],'color'=>['required','regex:/^#[0-9A-Fa-f]{6}$/'],'cost_type'=>['required',Rule::in(['DIRECT','OPERATING'])],'cost_behavior'=>['required',Rule::in(['VARIABLE','FIXED'])]]); }
     private function reportRange(Request $request):array { $from=$request->string('from')->value();$to=$request->string('to')->value();$from=Carbon::hasFormat($from,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$from)->startOfDay():now()->startOfMonth();$to=Carbon::hasFormat($to,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$to)->endOfDay():now()->endOfDay();if($from->gt($to))[$from,$to]=[$to->copy()->startOfDay(),$from->copy()->endOfDay()];return[$from,$to]; }
+    private function cashflowRange(Request $request):array
+    {
+        $from=$request->string('cashflow_from')->value();
+        $to=$request->string('cashflow_to')->value();
+        $from=Carbon::hasFormat($from,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$from)->startOfDay():now()->subMonths(5)->startOfMonth();
+        $to=Carbon::hasFormat($to,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$to)->endOfDay():now()->endOfDay();
+        if($from->gt($to))[$from,$to]=[$to->copy()->startOfDay(),$from->copy()->endOfDay()];
+        $latest=$from->copy()->addYear()->subDay()->endOfDay();
+        if($to->gt($latest))$to=$latest;
+
+        return[$from,$to];
+    }
+    private function cashflowSeries(Carbon $from,Carbon $to):array
+    {
+        $payments=Payment::whereBetween('paid_at',[$from->toDateString(),$to->toDateString()])->get(['amount','paid_at']);
+        $expenses=Expense::whereBetween('spent_at',[$from->toDateString(),$to->toDateString()])->get(['amount','spent_at']);
+        $days=$from->diffInDays($to)+1;
+        $granularity=$days<=31?'Harian':($days<=120?'Mingguan':'Bulanan');
+        $points=collect();
+        $cursor=$from->copy()->startOfDay();
+
+        while($cursor->lte($to)){
+            if($granularity==='Harian'){
+                $start=$cursor->copy();
+                $end=$cursor->copy()->endOfDay();
+                $label=$start->translatedFormat('d M');
+                $cursor->addDay();
+            }elseif($granularity==='Mingguan'){
+                $start=$cursor->copy();
+                $end=$cursor->copy()->addDays(6)->endOfDay()->min($to);
+                $label=$start->translatedFormat('d M').'–'.$end->translatedFormat('d M');
+                $cursor=$end->copy()->addDay()->startOfDay();
+            }else{
+                $start=$cursor->copy();
+                $end=$cursor->copy()->endOfMonth()->min($to);
+                $label=$start->translatedFormat('M Y');
+                $cursor=$end->copy()->addDay()->startOfDay();
+            }
+            $points->push([
+                'label'=>$label,
+                'income'=>(float)$payments->filter(fn(Payment $payment)=>$payment->paid_at->betweenIncluded($start,$end))->sum('amount'),
+                'expense'=>(float)$expenses->filter(fn(Expense $expense)=>$expense->spent_at->betweenIncluded($start,$end))->sum('amount'),
+            ]);
+        }
+
+        return[$points,$granularity];
+    }
     private function normalizeCurrencyFields(Request $request,array $fields):void { foreach($fields as $field){if($request->filled($field))$request->merge([$field=>preg_replace('/\D+/','',(string)$request->input($field))]);} }
     private function billingRate(Room $room,string $cycle):float { return (float)match($cycle){'DAILY'=>$room->category->daily_price,'WEEKLY'=>$room->category->weekly_price,default=>$room->category->monthly_price}; }
     private function paymentPeriod(Carbon $start,string $cycle,int $count):array
