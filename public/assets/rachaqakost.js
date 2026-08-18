@@ -247,7 +247,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     document.querySelectorAll('[data-import-row]').forEach(row => {
         const type = row.querySelector('[data-import-type]');
-        const updateType = () => row.classList.toggle('is-expense', type?.value === 'EXPENSE');
+        const updateType = () => {
+            row.classList.toggle('is-expense', type?.value === 'EXPENSE');
+            row.classList.toggle('is-tenant-history', type?.value === 'TENANT');
+        };
         type?.addEventListener('change', updateType);
         updateType();
     });

@@ -100,14 +100,16 @@ class ImageLedgerExtractor
         $scope = match ($kind) {
             'PAYMENT' => 'Hanya ambil transaksi pendapatan atau pembayaran sewa.',
             'EXPENSE' => 'Hanya ambil transaksi pengeluaran.',
-            default => 'Ambil transaksi pendapatan/pembayaran dan pengeluaran, lalu bedakan jenisnya.',
+            'TENANT' => 'Hanya ambil riwayat penghuni yang sudah keluar. Gunakan jenis TENANT.',
+            default => 'Ambil transaksi pendapatan/pembayaran, pengeluaran, dan riwayat penghuni checkout, lalu bedakan jenisnya.',
         };
 
         return "Baca seluruh foto buku pembukuan kos berbahasa Indonesia. {$scope}\n"
             ."Salin satu baris buku menjadi satu transaksi dan jangan mengarang nilai yang tidak terlihat. Tahun default adalah {$year} bila tulisan hanya memuat tanggal dan bulan. "
             .'Nominal harus berupa angka Rupiah tanpa separator. Siklus tagihan hanya DAILY, WEEKLY, atau MONTHLY. Metode hanya Transfer, Cash, atau QRIS. '
             .'Jika informasi tidak terbaca, isi null dan turunkan confidence. period_start adalah awal periode sewa yang dibayar, bukan tanggal pembayaran. '
-            .'Untuk expense, isi title dan category jika tertulis. Untuk payment, isi tenant_name dan room_number jika tersedia. notes berisi teks penting lain dari baris tersebut.';
+            .'Untuk expense, isi title dan category jika tertulis. Untuk payment, isi tenant_name dan room_number jika tersedia. '
+            .'Untuk riwayat penghuni, gunakan TENANT serta isi tenant_name, room_number, phone, identity_number, move_in, dan move_out dari buku. notes berisi teks penting lain dari baris tersebut.';
     }
 
     private function schema(): array
@@ -126,9 +128,13 @@ class ImageLedgerExtractor
                         'properties'=>[
                             'page_number'=>['type'=>'integer', 'minimum'=>1],
                             'row_number'=>['type'=>'integer', 'minimum'=>1],
-                            'transaction_type'=>['type'=>'string', 'enum'=>['PAYMENT','EXPENSE']],
+                            'transaction_type'=>['type'=>'string', 'enum'=>['PAYMENT','EXPENSE','TENANT']],
                             'tenant_name'=>$nullableString,
                             'room_number'=>$nullableString,
+                            'phone'=>$nullableString,
+                            'identity_number'=>$nullableString,
+                            'move_in'=>$nullableString,
+                            'move_out'=>$nullableString,
                             'transaction_date'=>$nullableString,
                             'amount'=>$nullableNumber,
                             'billing_cycle'=>['type'=>['string','null'], 'enum'=>['DAILY','WEEKLY','MONTHLY',null]],
@@ -140,7 +146,7 @@ class ImageLedgerExtractor
                             'notes'=>$nullableString,
                             'confidence'=>['type'=>'number', 'minimum'=>0, 'maximum'=>100],
                         ],
-                        'required'=>['page_number','row_number','transaction_type','tenant_name','room_number','transaction_date','amount','billing_cycle','period_count','period_start','method','category','title','notes','confidence'],
+                        'required'=>['page_number','row_number','transaction_type','tenant_name','room_number','phone','identity_number','move_in','move_out','transaction_date','amount','billing_cycle','period_count','period_start','method','category','title','notes','confidence'],
                         'additionalProperties'=>false,
                     ],
                 ],

@@ -2,13 +2,14 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{Expense, ExpenseCategory, ImportBatch, ImportRow, Payment, Tenant};
+use App\Models\{Expense, ExpenseCategory, ImportBatch, ImportRow, Payment, Room, Tenant};
 use App\Services\{ImageLedgerExtractor, LedgerImportService};
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class ImportController extends Controller
 {
@@ -28,6 +29,7 @@ class ImportController extends Controller
         return view('imports.review', [
             'batch'=>$batch,
             'tenants'=>Tenant::with('room')->orderByDesc('active')->orderBy('name')->get(),
+            'rooms'=>Room::with('category')->orderBy('number')->get(),
             'expenseCategories'=>ExpenseCategory::orderBy('name')->get(),
         ]);
     }
@@ -39,7 +41,7 @@ class ImportController extends Controller
             'images'=>['required','array','min:1','max:4'],
             'images.*'=>['required','file','max:12288','mimes:jpg,jpeg,png,webp,heic,heif'],
             'default_year'=>['required','integer','min:2000','max:2100'],
-            'ledger_kind'=>['required', Rule::in(['MIXED','PAYMENT','EXPENSE'])],
+            'ledger_kind'=>['required', Rule::in(['MIXED','PAYMENT','EXPENSE','TENANT'])],
         ]);
         $files = $request->file('images');
         $batch = ImportBatch::create([
@@ -75,7 +77,7 @@ class ImportController extends Controller
         try {
             $rows = $this->readCsv($file->getRealPath());
             $imports->createRows($batch, $rows);
-            if ($batch->total_rows === 0) throw new \RuntimeException('File CSV tidak memiliki baris transaksi.');
+            if ($batch->total_rows === 0) throw new \RuntimeException('File CSV tidak memiliki baris data.');
             return redirect()->route('imports.show', $batch)->with('success', $batch->total_rows.' baris CSV dimuat. Periksa sebelum import.');
         } catch (\Throwable $e) {
             $batch->update(['status'=>'FAILED', 'error_message'=>Str::limit($e->getMessage(), 1000)]);
@@ -90,8 +92,14 @@ class ImportController extends Controller
         $data = $request->validate([
             'rows'=>['required','array'],
             'rows.*.selected'=>['nullable','boolean'],
-            'rows.*.transaction_type'=>['required',Rule::in(['PAYMENT','EXPENSE'])],
+            'rows.*.transaction_type'=>['required',Rule::in(['PAYMENT','EXPENSE','TENANT'])],
             'rows.*.tenant_id'=>['nullable','exists:tenants,id'],
+            'rows.*.room_id'=>['nullable','exists:rooms,id'],
+            'rows.*.tenant_name'=>['nullable','string','max:120'],
+            'rows.*.tenant_phone'=>['nullable','string','max:30'],
+            'rows.*.tenant_identity_number'=>['nullable','string','max:40'],
+            'rows.*.tenant_move_in'=>['nullable','date'],
+            'rows.*.tenant_move_out'=>['nullable','date'],
             'rows.*.expense_category'=>['nullable','exists:expense_categories,name'],
             'rows.*.transaction_date'=>['nullable','date'],
             'rows.*.amount'=>['nullable','string','max:30'],
@@ -109,8 +117,14 @@ class ImportController extends Controller
             $amount = preg_replace('/\D+/', '', (string) ($input['amount'] ?? ''));
             $row->update([
                 'selected'=>(bool) ($input['selected'] ?? false),
-                'transaction_type'=>in_array($input['transaction_type'] ?? null, ['PAYMENT','EXPENSE'], true) ? $input['transaction_type'] : 'PAYMENT',
+                'transaction_type'=>in_array($input['transaction_type'] ?? null, ['PAYMENT','EXPENSE','TENANT'], true) ? $input['transaction_type'] : 'PAYMENT',
                 'tenant_id'=>filled($input['tenant_id'] ?? null) ? (int) $input['tenant_id'] : null,
+                'room_id'=>filled($input['room_id'] ?? null) ? (int) $input['room_id'] : null,
+                'tenant_name'=>filled($input['tenant_name'] ?? null) ? Str::limit(trim($input['tenant_name']), 120, '') : null,
+                'tenant_phone'=>filled($input['tenant_phone'] ?? null) ? Str::limit(trim($input['tenant_phone']), 30, '') : null,
+                'tenant_identity_number'=>filled($input['tenant_identity_number'] ?? null) ? Str::limit(trim($input['tenant_identity_number']), 40, '') : null,
+                'tenant_move_in'=>filled($input['tenant_move_in'] ?? null) ? $input['tenant_move_in'] : null,
+                'tenant_move_out'=>filled($input['tenant_move_out'] ?? null) ? $input['tenant_move_out'] : null,
                 'expense_category'=>filled($input['expense_category'] ?? null) ? $input['expense_category'] : null,
                 'transaction_date'=>filled($input['transaction_date'] ?? null) ? $input['transaction_date'] : null,
                 'amount'=>$amount !== '' ? $amount : null,
@@ -143,11 +157,29 @@ class ImportController extends Controller
             $locked = ImportBatch::whereKey($batch->id)->lockForUpdate()->firstOrFail();
             abort_unless($locked->status === 'DRAFT', 422, 'Batch sudah pernah diproses.');
             $imported = 0;
+            $resolveTenant = function (ImportRow $row) use ($locked, $imports) {
+                if ($row->tenant_id) return Tenant::findOrFail($row->tenant_id);
+                if ($existing = $imports->findHistoricalTenant($row)) return $existing;
+
+                return Tenant::create([
+                    'room_id'=>$row->room_id,
+                    'name'=>$row->tenant_name,
+                    'phone'=>$row->tenant_phone ?: '-',
+                    'identity_number'=>$row->tenant_identity_number,
+                    'move_in'=>$row->tenant_move_in,
+                    'move_out'=>$row->tenant_move_out,
+                    'next_due'=>$row->tenant_move_out,
+                    'billing_cycle'=>$row->billing_cycle ?: 'MONTHLY',
+                    'active'=>false,
+                    'import_batch_id'=>$locked->id,
+                ]);
+            };
             foreach ($selected as $row) {
                 if ($row->transaction_type === 'PAYMENT') {
+                    $tenant = $resolveTenant($row);
                     [$period, $coverageEnd] = $imports->periodDetails(Carbon::parse($row->period_start), $row->billing_cycle, $row->period_count);
                     $payment = Payment::create([
-                        'tenant_id'=>$row->tenant_id,
+                        'tenant_id'=>$tenant->id,
                         'amount'=>$row->amount,
                         'paid_at'=>$row->transaction_date,
                         'period'=>$period,
@@ -160,8 +192,12 @@ class ImportController extends Controller
                         'coverage_end'=>$coverageEnd,
                         'import_batch_id'=>$locked->id,
                     ]);
-                    $row->update(['imported_payment_id'=>$payment->id]);
-                } else {
+                    $row->update([
+                        'tenant_id'=>$tenant->id,
+                        'imported_payment_id'=>$payment->id,
+                        'imported_tenant_id'=>$tenant->import_batch_id === $locked->id ? $tenant->id : null,
+                    ]);
+                } elseif ($row->transaction_type === 'EXPENSE') {
                     $expense = Expense::create([
                         'title'=>$row->title,
                         'category'=>$row->expense_category,
@@ -172,13 +208,19 @@ class ImportController extends Controller
                         'import_batch_id'=>$locked->id,
                     ]);
                     $row->update(['imported_expense_id'=>$expense->id]);
+                } else {
+                    $tenant = $resolveTenant($row);
+                    $row->update([
+                        'tenant_id'=>$tenant->id,
+                        'imported_tenant_id'=>$tenant->import_batch_id === $locked->id ? $tenant->id : null,
+                    ]);
                 }
                 $imported++;
             }
             $locked->update(['status'=>'COMPLETED', 'imported_rows'=>$imported, 'committed_at'=>now()]);
         });
 
-        return redirect()->route('imports.show', $batch)->with('success', $selected->count().' transaksi historis berhasil masuk tanpa mengubah jatuh tempo.');
+        return redirect()->route('imports.show', $batch)->with('success', $selected->count().' data historis berhasil masuk tanpa mengubah jatuh tempo penghuni aktif.');
     }
 
     public function undo(Request $request, ImportBatch $batch, LedgerImportService $imports)
@@ -192,12 +234,24 @@ class ImportController extends Controller
 
             $paymentCount = Payment::where('import_batch_id', $locked->id)->count();
             $expenseCount = Expense::where('import_batch_id', $locked->id)->count();
+            $tenantCount = Tenant::where('import_batch_id', $locked->id)->count();
+            $tenantIds = Tenant::where('import_batch_id', $locked->id)->pluck('id');
+            $usedOutsideBatch = Payment::whereIn('tenant_id', $tenantIds)
+                ->where(function ($query) use ($locked) {
+                    $query->whereNull('import_batch_id')->orWhere('import_batch_id', '!=', $locked->id);
+                })->exists();
+            if ($usedOutsideBatch) {
+                throw ValidationException::withMessages(['batch'=>'Riwayat penghuni dari batch ini sudah dipakai pembayaran lain. Undo pembayaran atau batch terkait lebih dulu.']);
+            }
 
+            ImportRow::where('import_batch_id', $locked->id)->whereNotNull('imported_tenant_id')->update(['tenant_id'=>null]);
             Payment::where('import_batch_id', $locked->id)->delete();
             Expense::where('import_batch_id', $locked->id)->delete();
+            Tenant::where('import_batch_id', $locked->id)->delete();
             ImportRow::where('import_batch_id', $locked->id)->update([
                 'imported_payment_id'=>null,
                 'imported_expense_id'=>null,
+                'imported_tenant_id'=>null,
             ]);
 
             $locked->update([
@@ -208,7 +262,7 @@ class ImportController extends Controller
                 'last_undone_by'=>$request->user()->id,
             ]);
 
-            return $paymentCount + $expenseCount;
+            return $paymentCount + $expenseCount + $tenantCount;
         });
 
         $imports->refreshBatch($batch->fresh());
@@ -230,9 +284,10 @@ class ImportController extends Controller
         return response()->streamDownload(function () {
             $out = fopen('php://output', 'w');
             fwrite($out, "\xEF\xBB\xBF");
-            fputcsv($out, ['transaction_type','tenant_name','room_number','transaction_date','amount','billing_cycle','period_count','period_start','method','category','title','notes']);
-            fputcsv($out, ['PAYMENT','Budi','A.01','2026-05-10','1500000','MONTHLY','1','2026-05-01','Transfer','','','Pembayaran Mei']);
-            fputcsv($out, ['EXPENSE','','','2026-05-12','350000','','','','','Listrik','Token listrik','Meter utama']);
+            fputcsv($out, ['transaction_type','tenant_name','room_number','phone','identity_number','move_in','move_out','transaction_date','amount','billing_cycle','period_count','period_start','method','category','title','notes']);
+            fputcsv($out, ['TENANT','Siti','A.02','081298765432','3273010202020002','2025-11-01','2026-02-28','','','MONTHLY','','','','','','Riwayat penghuni lama']);
+            fputcsv($out, ['PAYMENT','Budi','A.01','081234567890','3273010101010001','2026-01-05','2026-05-31','2026-05-10','1500000','MONTHLY','1','2026-05-01','Transfer','','','Pembayaran Mei']);
+            fputcsv($out, ['EXPENSE','','','','','','','2026-05-12','350000','','','','','Listrik','Token listrik','Meter utama']);
             fclose($out);
         }, 'template-import-rachaqakost.csv', ['Content-Type'=>'text/csv; charset=UTF-8']);
     }

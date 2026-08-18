@@ -2,7 +2,7 @@
 
 namespace App\Services;
 
-use App\Models\{Expense, ExpenseCategory, ImportBatch, ImportRow, Payment, Tenant};
+use App\Models\{Expense, ExpenseCategory, ImportBatch, ImportRow, Payment, Room, Tenant};
 use Carbon\Carbon;
 use Illuminate\Support\Str;
 
@@ -11,12 +11,14 @@ class LedgerImportService
     public function createRows(ImportBatch $batch, array $sourceRows): void
     {
         $tenants = Tenant::with('room')->get();
+        $rooms = Room::all();
         $categories = ExpenseCategory::all();
         $nextRow = 1;
 
         foreach ($sourceRows as $source) {
             $type = $this->type($source['transaction_type'] ?? $source['jenis'] ?? null);
             $tenant = $type === 'PAYMENT' ? $this->matchTenant($tenants, $source) : null;
+            $room = $tenant?->room ?: $this->matchRoom($rooms, $source['room_number'] ?? $source['kamar'] ?? null);
             $category = $type === 'EXPENSE' ? $this->matchCategory($categories, $source['category'] ?? $source['kategori'] ?? null) : null;
             $cycle = $this->cycle($source['billing_cycle'] ?? $source['siklus'] ?? null) ?: ($tenant?->billing_cycle ?? 'MONTHLY');
             $date = $this->date($source['transaction_date'] ?? $source['tanggal'] ?? $source['paid_at'] ?? $source['spent_at'] ?? null);
@@ -24,7 +26,7 @@ class LedgerImportService
             $method = $this->method($source['method'] ?? $source['metode'] ?? null) ?: ($type === 'PAYMENT' ? 'Transfer' : null);
             $confidence = isset($source['confidence']) ? max(0, min(100, (float) $source['confidence'])) : null;
             $notes = trim((string) ($source['notes'] ?? $source['catatan'] ?? '')) ?: null;
-            if (! empty($source['tenant_name']) && ! $tenant) {
+            if ($type === 'PAYMENT' && ! empty($source['tenant_name']) && ! $tenant && ! $room) {
                 $notes = trim('Terbaca: '.($source['tenant_name'] ?? '').(! empty($source['room_number']) ? ' · Kamar '.$source['room_number'] : '').($notes ? ' · '.$notes : ''));
             }
 
@@ -33,10 +35,16 @@ class LedgerImportService
                 'row_number'=>$nextRow++,
                 'transaction_type'=>$type,
                 'tenant_id'=>$tenant?->id,
+                'room_id'=>$room?->id,
+                'tenant_name'=>trim((string) ($source['tenant_name'] ?? $source['penghuni'] ?? $source['nama'] ?? '')) ?: null,
+                'tenant_phone'=>trim((string) ($source['phone'] ?? $source['tenant_phone'] ?? $source['no_hp'] ?? '')) ?: null,
+                'tenant_identity_number'=>trim((string) ($source['identity_number'] ?? $source['no_identitas'] ?? '')) ?: null,
+                'tenant_move_in'=>$this->date($source['move_in'] ?? $source['tanggal_masuk'] ?? null),
+                'tenant_move_out'=>$this->date($source['move_out'] ?? $source['tanggal_keluar'] ?? null),
                 'expense_category'=>$category?->name,
                 'transaction_date'=>$date,
                 'amount'=>$this->amount($source['amount'] ?? $source['nominal'] ?? null),
-                'billing_cycle'=>$type === 'PAYMENT' ? $cycle : null,
+                'billing_cycle'=>in_array($type, ['PAYMENT','TENANT'], true) ? $cycle : null,
                 'period_count'=>$type === 'PAYMENT' ? max(1, min(365, (int) ($source['period_count'] ?? $source['jumlah_periode'] ?? 1))) : 1,
                 'period_start'=>$periodStart,
                 'method'=>$method,
@@ -58,12 +66,14 @@ class LedgerImportService
             $row->update(['validation_errors'=>[]]);
             return [];
         }
-        if (! in_array($row->transaction_type, ['PAYMENT','EXPENSE'], true)) $errors[] = 'Jenis transaksi tidak valid.';
-        if (! $row->transaction_date) $errors[] = 'Tanggal transaksi wajib diisi.';
-        if (! $row->amount || (float) $row->amount <= 0) $errors[] = 'Nominal harus lebih dari nol.';
+        if (! in_array($row->transaction_type, ['PAYMENT','EXPENSE','TENANT'], true)) $errors[] = 'Jenis transaksi tidak valid.';
 
         if ($row->transaction_type === 'PAYMENT') {
-            if (! $row->tenant_id || ! Tenant::whereKey($row->tenant_id)->exists()) $errors[] = 'Pilih penghuni yang sesuai.';
+            if (! $row->transaction_date) $errors[] = 'Tanggal transaksi wajib diisi.';
+            if (! $row->amount || (float) $row->amount <= 0) $errors[] = 'Nominal harus lebih dari nol.';
+            if (! $row->tenant_id || ! Tenant::whereKey($row->tenant_id)->exists()) {
+                $errors = array_merge($errors, $this->tenantHistoryErrors($row));
+            }
             if (! in_array($row->billing_cycle, ['DAILY','WEEKLY','MONTHLY'], true)) $errors[] = 'Pilih siklus pembayaran.';
             if (! $row->period_start) $errors[] = 'Periode awal wajib diisi.';
             $limit = match ($row->billing_cycle) {'DAILY'=>365, 'WEEKLY'=>52, default=>24};
@@ -74,7 +84,9 @@ class LedgerImportService
                 $duplicateInBatch = ImportRow::where('import_batch_id', $row->import_batch_id)->where('id', '!=', $row->id)->where('selected', true)->where('transaction_type', 'PAYMENT')->where('tenant_id', $row->tenant_id)->whereDate('transaction_date', $row->transaction_date)->where('amount', $row->amount)->where('billing_cycle', $row->billing_cycle)->where('period_count', $row->period_count)->whereDate('period_start', $row->period_start)->exists();
                 if ($duplicate || $duplicateInBatch) $errors[] = 'Transaksi identik terdeteksi; nonaktifkan salah satu agar tidak dobel.';
             }
-        } else {
+        } elseif ($row->transaction_type === 'EXPENSE') {
+            if (! $row->transaction_date) $errors[] = 'Tanggal transaksi wajib diisi.';
+            if (! $row->amount || (float) $row->amount <= 0) $errors[] = 'Nominal harus lebih dari nol.';
             if (! $row->expense_category || ! ExpenseCategory::where('name', $row->expense_category)->exists()) $errors[] = 'Pilih kategori pengeluaran.';
             if (! trim((string) $row->title)) $errors[] = 'Nama pengeluaran wajib diisi.';
             if ($row->transaction_date && $row->amount && $row->expense_category && trim((string) $row->title)) {
@@ -82,6 +94,8 @@ class LedgerImportService
                 $duplicateInBatch = ImportRow::where('import_batch_id', $row->import_batch_id)->where('id', '!=', $row->id)->where('selected', true)->where('transaction_type', 'EXPENSE')->whereDate('transaction_date', $row->transaction_date)->where('amount', $row->amount)->where('expense_category', $row->expense_category)->where('title', $row->title)->exists();
                 if ($duplicate || $duplicateInBatch) $errors[] = 'Transaksi identik terdeteksi; nonaktifkan salah satu agar tidak dobel.';
             }
+        } else {
+            $errors = array_merge($errors, $this->tenantHistoryErrors($row, true));
         }
 
         $row->update(['validation_errors'=>$errors]);
@@ -116,9 +130,21 @@ class LedgerImportService
         return [$label, $end];
     }
 
+    public function findHistoricalTenant(ImportRow $row): ?Tenant
+    {
+        if (! $row->room_id || ! $row->tenant_name || ! $row->tenant_move_in || ! $row->tenant_move_out) return null;
+
+        return Tenant::where('room_id', $row->room_id)
+            ->whereDate('move_in', $row->tenant_move_in)
+            ->whereDate('move_out', $row->tenant_move_out)
+            ->get()
+            ->first(fn (Tenant $tenant) => $this->normalize($tenant->name) === $this->normalize($row->tenant_name));
+    }
+
     private function type(mixed $value): string
     {
         $value = Str::upper(trim((string) $value));
+        if (in_array($value, ['TENANT','TENANT_HISTORY','PENGHUNI','RIWAYAT_PENGHUNI','CHECKOUT'], true)) return 'TENANT';
         return in_array($value, ['EXPENSE','PENGELUARAN','KELUAR','DEBIT'], true) ? 'EXPENSE' : 'PAYMENT';
     }
 
@@ -168,12 +194,16 @@ class LedgerImportService
     {
         $name = $this->normalize($source['tenant_name'] ?? $source['penghuni'] ?? $source['nama'] ?? null);
         $room = $this->normalize($source['room_number'] ?? $source['kamar'] ?? null);
+        $moveIn = $this->date($source['move_in'] ?? $source['tanggal_masuk'] ?? null);
+        $moveOut = $this->date($source['move_out'] ?? $source['tanggal_keluar'] ?? null);
         if (! $name && ! $room) return null;
 
-        $matches = $tenants->filter(function (Tenant $tenant) use ($name, $room) {
+        $matches = $tenants->filter(function (Tenant $tenant) use ($name, $room, $moveIn, $moveOut) {
             $nameMatches = ! $name || $this->normalize($tenant->name) === $name;
             $roomMatches = ! $room || $this->normalize($tenant->room?->number) === $room;
-            return $nameMatches && $roomMatches;
+            $moveInMatches = ! $moveIn || $tenant->move_in?->toDateString() === $moveIn;
+            $moveOutMatches = ! $moveOut || $tenant->move_out?->toDateString() === $moveOut;
+            return $nameMatches && $roomMatches && $moveInMatches && $moveOutMatches;
         });
         return $matches->count() === 1 ? $matches->first() : null;
     }
@@ -183,6 +213,43 @@ class LedgerImportService
         $name = $this->normalize($value);
         if (! $name) return null;
         return $categories->first(fn (ExpenseCategory $category) => $this->normalize($category->name) === $name);
+    }
+
+    private function matchRoom($rooms, mixed $value): ?Room
+    {
+        $number = $this->normalize($value);
+        if (! $number) return null;
+        return $rooms->first(fn (Room $room) => $this->normalize($room->number) === $number);
+    }
+
+    private function tenantHistoryErrors(ImportRow $row, bool $rejectExisting = false): array
+    {
+        $errors = [];
+        if (! trim((string) $row->tenant_name)) $errors[] = 'Nama penghuni wajib diisi.';
+        if (! $row->room_id || ! Room::whereKey($row->room_id)->exists()) $errors[] = 'Pilih kamar yang sesuai.';
+        if (! $row->tenant_move_in) $errors[] = 'Tanggal masuk wajib diisi.';
+        if (! $row->tenant_move_out) $errors[] = 'Tanggal keluar wajib diisi untuk riwayat checkout.';
+        if ($row->tenant_move_in && $row->tenant_move_out && $row->tenant_move_out->lt($row->tenant_move_in)) $errors[] = 'Tanggal keluar tidak boleh sebelum tanggal masuk.';
+        if (! in_array($row->billing_cycle, ['DAILY','WEEKLY','MONTHLY'], true)) $errors[] = 'Pilih siklus sewa.';
+
+        if (empty($errors) && $rejectExisting && $this->findHistoricalTenant($row)) {
+            $errors[] = 'Riwayat penghuni yang sama sudah ada di database.';
+        }
+        if (empty($errors) && $rejectExisting) {
+            $duplicateInBatch = ImportRow::where('import_batch_id', $row->import_batch_id)
+                ->where('id', '!=', $row->id)
+                ->where('selected', true)
+                ->whereIn('transaction_type', ['TENANT','PAYMENT'])
+                ->whereNull('tenant_id')
+                ->where('room_id', $row->room_id)
+                ->whereDate('tenant_move_in', $row->tenant_move_in)
+                ->whereDate('tenant_move_out', $row->tenant_move_out)
+                ->get()
+                ->contains(fn (ImportRow $candidate) => $this->normalize($candidate->tenant_name) === $this->normalize($row->tenant_name));
+            if ($duplicateInBatch) $errors[] = 'Riwayat penghuni yang sama muncul lebih dari sekali dalam batch.';
+        }
+
+        return $errors;
     }
 
     private function normalize(mixed $value): string

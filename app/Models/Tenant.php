@@ -6,7 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class Tenant extends Model
 {
-    protected $fillable = ['room_id', 'name', 'phone', 'identity_number', 'move_in', 'move_out', 'next_due', 'billing_cycle', 'active'];
+    protected $fillable = ['room_id', 'name', 'phone', 'identity_number', 'move_in', 'move_out', 'next_due', 'billing_cycle', 'active', 'import_batch_id'];
 
     protected $casts = ['move_in'=>'date', 'move_out'=>'date', 'next_due'=>'date', 'active'=>'boolean'];
 
@@ -18,6 +18,11 @@ class Tenant extends Model
     public function payments()
     {
         return $this->hasMany(Payment::class);
+    }
+
+    public function importBatch()
+    {
+        return $this->belongsTo(ImportBatch::class);
     }
 
     public function billingRate(): float
