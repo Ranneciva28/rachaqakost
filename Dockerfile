@@ -5,7 +5,12 @@ RUN composer install --no-dev --no-interaction --prefer-dist --optimize-autoload
 
 FROM php:8.3-apache-bookworm
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends libpq-dev libzip-dev libheif-examples unzip \
+    && apt-get install -y --no-install-recommends ca-certificates curl libpq-dev libzip-dev libheif-examples unzip \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl --fail --show-error --silent -o /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-17 \
     && docker-php-ext-install -j$(nproc) pdo_pgsql opcache zip \
     && (a2dismod mpm_event mpm_worker || true) \
     && a2enmod mpm_prefork rewrite headers expires \
