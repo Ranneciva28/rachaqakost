@@ -7,12 +7,13 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use App\Services\LedgerTableService;
 
 class KostController extends Controller
 {
     private const DEFAULT_WHATSAPP_TEMPLATE = "Halo {nama}, kami dari RachaqaKost ingin mengingatkan pembayaran sewa kamar #{kamar} sebesar {nominal} yang {status}, tepatnya pada {jatuh_tempo}. Mohon konfirmasinya ya. Terima kasih.";
 
-    public function index(Request $request)
+    public function index(Request $request, LedgerTableService $ledger)
     {
         [$reportFrom, $reportTo] = $this->reportRange($request);
         [$cashflowFrom, $cashflowTo] = $this->cashflowRange($request);
@@ -26,13 +27,19 @@ class KostController extends Controller
         $activeTab = $request->string('tab')->value() ?: 'dashboard';
         $allowed = ['dashboard','rooms','tenants','payments','expenses','maintenance','users'];
         if (!in_array($activeTab, $allowed, true) || ($activeTab === 'users' && !$request->user()->isOwner())) $activeTab = 'dashboard';
+        $paymentFilters=$ledger->paymentFilters($request);
+        $expenseFilters=$ledger->expenseFilters($request);
+        $payments=collect();$expenses=collect();$paymentFilteredTotal=0.0;$expenseFilteredTotal=0.0;
+        if($activeTab==='payments')[$payments,$paymentFilteredTotal]=$ledger->payments($paymentFilters);
+        if($activeTab==='expenses')[$expenses,$expenseFilteredTotal]=$ledger->expenses($expenseFilters);
 
         return view('dashboard', [
             'activeTab'=>$activeTab, 'rooms'=>$rooms, 'categories'=>RoomCategory::withCount('rooms')->orderBy('name')->get(),
             'tenants'=>$tenants, 'tenantHistory'=>Tenant::with('room.category')->where('active',false)->latest('move_out')->limit(40)->get(),
             'paymentTenants'=>Tenant::with('room.category')->orderByDesc('active')->orderBy('name')->get(),
-            'payments'=>Payment::with(['tenant.room','recorder'])->latest('paid_at')->limit(80)->get(),
-            'expenses'=>Expense::with('recorder')->latest('spent_at')->limit(80)->get(),
+            'payments'=>$payments, 'paymentFilters'=>$paymentFilters, 'paymentFilteredTotal'=>$paymentFilteredTotal,
+            'expenses'=>$expenses, 'expenseFilters'=>$expenseFilters, 'expenseFilteredTotal'=>$expenseFilteredTotal,
+            'ledgerPageSizes'=>LedgerTableService::PAGE_SIZES,
             'expenseCategories'=>ExpenseCategory::orderByDesc('is_system')->orderBy('name')->get(),
             'maintenances'=>Maintenance::with(['room','recorder'])->latest('reported_at')->get(),
             'income'=>$income, 'expenseTotal'=>$expenseTotal, 'profit'=>$income-$expenseTotal,
