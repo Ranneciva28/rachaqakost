@@ -78,7 +78,6 @@ class KostController extends Controller
         if($room->importRows()->exists())return back()->withErrors(['room'=>'Kamar masih dipakai dalam batch import. Hapus draft batch terkait lebih dulu.']);
         $number=$room->number;
         $room->delete();
-
         return back()->with('success','Kamar #'.$number.' berhasil dihapus.');
     }
 
@@ -101,37 +100,12 @@ class KostController extends Controller
 
     public function updateTenant(Request $request, Tenant $tenant)
     {
-        $data=$request->validate([
-            'room_id'=>['required','exists:rooms,id'],
-            'name'=>['required','string','max:120'],
-            'phone'=>['required','string','max:30'],
-            'identity_number'=>['nullable','string','max:40'],
-            'move_in'=>['required','date'],
-            'next_due'=>['required','date','after_or_equal:move_in'],
-            'billing_cycle'=>['required',Rule::in(['DAILY','WEEKLY','MONTHLY'])],
-            'move_out'=>[Rule::requiredIf(!$tenant->active),'nullable','date','after_or_equal:move_in'],
-        ]);
+        $data=$request->validate(['room_id'=>['required','exists:rooms,id'],'name'=>['required','string','max:120'],'phone'=>['required','string','max:30'],'identity_number'=>['nullable','string','max:40'],'move_in'=>['required','date'],'next_due'=>['required','date','after_or_equal:move_in'],'billing_cycle'=>['required',Rule::in(['DAILY','WEEKLY','MONTHLY'])],'move_out'=>[Rule::requiredIf(!$tenant->active),'nullable','date','after_or_equal:move_in']]);
         $targetRoom=Room::findOrFail($data['room_id']);
         $roomChanged=(int)$tenant->room_id!==(int)$targetRoom->id;
-
-        if($tenant->active&&$roomChanged){
-            abort_if($targetRoom->status!=='KOSONG'||$targetRoom->activeTenant()->exists(),422,'Kamar tujuan tidak tersedia. Pilih kamar kosong.');
-        }
-        if($tenant->active){
-            $targetRoom->loadMissing('category');
-            abort_if($this->billingRate($targetRoom,$data['billing_cycle'])<=0,422,'Harga untuk siklus tagihan tersebut belum diatur pada kategori kamar.');
-        }
-        if($tenant->active)$data['move_out']=null;
-
-        DB::transaction(function()use($tenant,$targetRoom,$roomChanged,$data){
-            $oldRoom=$tenant->room;
-            $tenant->update($data);
-            if($tenant->active&&$roomChanged){
-                $oldRoom->update(['status'=>$oldRoom->maintenances()->where('status','!=','SELESAI')->exists()?'MAINTENANCE':'KOSONG']);
-                $targetRoom->update(['status'=>'TERISI']);
-            }
-        });
-
+        if($tenant->active&&$roomChanged)abort_if($targetRoom->status!=='KOSONG'||$targetRoom->activeTenant()->exists(),422,'Kamar tujuan tidak tersedia. Pilih kamar kosong.');
+        if($tenant->active){$targetRoom->loadMissing('category');abort_if($this->billingRate($targetRoom,$data['billing_cycle'])<=0,422,'Harga untuk siklus tagihan tersebut belum diatur pada kategori kamar.');$data['move_out']=null;}
+        DB::transaction(function()use($tenant,$targetRoom,$roomChanged,$data){$oldRoom=$tenant->room;$tenant->update($data);if($tenant->active&&$roomChanged){$oldRoom->update(['status'=>$oldRoom->maintenances()->where('status','!=','SELESAI')->exists()?'MAINTENANCE':'KOSONG']);$targetRoom->update(['status'=>'TERISI']);}});
         return back()->with('success','Data penghuni berhasil diperbarui.');
     }
 
@@ -148,162 +122,46 @@ class KostController extends Controller
             abort_if($this->billingRate($tenant->room,$cycle)<=0,422,'Tarif untuk siklus pembayaran tersebut belum diatur pada kategori kamar.');
             $limit=match($cycle){'DAILY'=>365,'WEEKLY'=>52,default=>24};
             abort_if((int)$data['periods']>$limit,422,'Jumlah periode melebihi batas untuk siklus tagihan ini.');
-            $periodStart=Carbon::parse($historical?$data['period_start']:$tenant->next_due);
-            [$period,$nextDue,$coverageEnd]=$this->paymentPeriod($periodStart,$cycle,(int)$data['periods']);
-            Payment::create([
-                'tenant_id'=>$tenant->id,
-                'amount'=>$data['amount'],
-                'paid_at'=>$data['paid_at'],
-                'period'=>$period,
-                'billing_cycle'=>$cycle,
-                'period_count'=>$data['periods'],
-                'method'=>$data['method'],
-                'recorded_by'=>$request->user()->id,
-                'is_historical'=>$historical,
-                'coverage_start'=>$periodStart,
-                'coverage_end'=>$coverageEnd,
-            ]);
-            if(!$historical)$tenant->update(['next_due'=>$nextDue,'billing_cycle'=>$cycle]);
-        });
-        return back()->with('success',$data['payment_mode']==='HISTORICAL'?'Pembayaran historis tersimpan tanpa mengubah jatuh tempo.':'Pembayaran tersimpan; jatuh tempo otomatis diperbarui.');
-    }
 
-    public function expense(Request $request)
-    {
-        $this->normalizeCurrencyFields($request, ['amount']);
-        $data=$request->validate(['title'=>['required','max:150'],'category'=>['required',Rule::exists('expense_categories','name')],'amount'=>['required','numeric','min:1'],'spent_at'=>['required','date'],'notes'=>['nullable','max:500']]);
-        Expense::create($data+['recorded_by'=>$request->user()->id]); return back()->with('success','Pengeluaran dicatat.');
-    }
-
-    public function storeExpenseCategory(Request $request)
-    {
-        $this->ownerOnly($request);
-        ExpenseCategory::create($this->expenseCategoryData($request));
-
-        return back()->with('success','Kategori pengeluaran ditambahkan.');
-    }
-
-    public function updateExpenseCategory(Request $request, ExpenseCategory $expenseCategory)
-    {
-        $this->ownerOnly($request);
-        $oldName=$expenseCategory->name;
-        $data=$this->expenseCategoryData($request,$expenseCategory);
-        abort_if($expenseCategory->is_system&&$oldName!==$data['name'],422,'Nama kategori sistem Maintenance tidak dapat diubah.');
-        DB::transaction(function()use($expenseCategory,$oldName,$data){
-            $expenseCategory->update($data);
-            if($oldName!==$data['name'])Expense::where('category',$oldName)->update(['category'=>$data['name']]);
-        });
-
-        return back()->with('success','Kategori pengeluaran diperbarui.');
-    }
-
-    public function destroyExpenseCategory(Request $request, ExpenseCategory $expenseCategory)
-    {
-        $this->ownerOnly($request);
-        abort_if($expenseCategory->is_system,422,'Kategori sistem Maintenance tidak dapat dihapus.');
-        $expenseCategory->delete();
-
-        return back()->with('success','Kategori dihapus; histori pengeluaran tetap tersimpan.');
-    }
-
-    public function maintenance(Request $request)
-    {
-        $this->normalizeCurrencyFields($request, ['cost']);
-        $data=$request->validate(['room_id'=>['required','exists:rooms,id'],'title'=>['required','max:150'],'status'=>['required',Rule::in(['DIJADWALKAN','DIKERJAKAN'])],'cost'=>['nullable','numeric','min:0'],'reported_at'=>['required','date'],'notes'=>['nullable','max:500']]);
-        DB::transaction(function()use($data,$request){Maintenance::create($data+['recorded_by'=>$request->user()->id]);Room::whereKey($data['room_id'])->update(['status'=>'MAINTENANCE']);});
-        return back()->with('success','Tiket maintenance dibuat.');
-    }
-
-    public function maintenanceDone(Request $request, Maintenance $maintenance)
-    {
-        abort_if($maintenance->status==='SELESAI',422,'Maintenance sudah selesai.');
-        $this->normalizeCurrencyFields($request, ['cost']);
-        $data=$request->validate(['completed_at'=>['required','date','after_or_equal:'.$maintenance->reported_at->toDateString()],'cost'=>['required','numeric','min:0'],'notes'=>['nullable','max:500']]);
-        DB::transaction(function()use($maintenance,$data,$request){$expense=(float)$data['cost']>0?Expense::create(['title'=>'Maintenance kamar #'.$maintenance->room->number.': '.$maintenance->title,'category'=>'Maintenance','amount'=>$data['cost'],'spent_at'=>$data['completed_at'],'notes'=>$data['notes']?:$maintenance->notes,'recorded_by'=>$request->user()->id]):null;$maintenance->update(['status'=>'SELESAI','completed_at'=>$data['completed_at'],'cost'=>$data['cost'],'notes'=>$data['notes']?:$maintenance->notes,'expense_id'=>$expense?->id]);$maintenance->room->update(['status'=>$maintenance->room->activeTenant()->exists()?'TERISI':'KOSONG']);});
-        return back()->with('success','Maintenance selesai dan masuk histori.');
-    }
-
-    public function updateWhatsAppTemplate(Request $request)
-    {
-        $this->ownerOnly($request);
-        $data=$request->validate([
-            'template'=>['required','string','max:1500'],
-        ]);
-        AppSetting::updateOrCreate(
-            ['key'=>'whatsapp_payment_template'],
-            ['value'=>$data['template'],'updated_by'=>$request->user()->id],
-        );
-
-        return back()->with('success','Template follow-up WhatsApp diperbarui.');
-    }
-
-    private function ownerOnly(Request $request):void { abort_unless($request->user()->isOwner(),403); }
-    private function categoryData(Request $request,?RoomCategory $category=null):array { $this->normalizeCurrencyFields($request,['daily_price','weekly_price','monthly_price']); return $request->validate(['name'=>['required','max:80',Rule::unique('room_categories','name')->ignore($category)],'daily_price'=>['required','numeric','min:0'],'weekly_price'=>['required','numeric','min:0'],'monthly_price'=>['required','numeric','min:0'],'color'=>['required','regex:/^#[0-9A-Fa-f]{6}$/']]); }
-    private function expenseCategoryData(Request $request,?ExpenseCategory $category=null):array { return $request->validate(['name'=>['required','max:60',Rule::unique('expense_categories','name')->ignore($category)],'color'=>['required','regex:/^#[0-9A-Fa-f]{6}$/'],'cost_type'=>['required',Rule::in(['DIRECT','OPERATING'])],'cost_behavior'=>['required',Rule::in(['VARIABLE','FIXED'])]]); }
-    private function reportRange(Request $request):array { $from=$request->string('from')->value();$to=$request->string('to')->value();$from=Carbon::hasFormat($from,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$from)->startOfDay():now()->startOfMonth();$to=Carbon::hasFormat($to,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$to)->endOfDay():now()->endOfDay();if($from->gt($to))[$from,$to]=[$to->copy()->startOfDay(),$from->copy()->endOfDay()];return[$from,$to]; }
-    private function cashflowRange(Request $request):array
-    {
-        $from=$request->string('cashflow_from')->value();
-        $to=$request->string('cashflow_to')->value();
-        $from=Carbon::hasFormat($from,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$from)->startOfDay():now()->subMonths(5)->startOfMonth();
-        $to=Carbon::hasFormat($to,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$to)->endOfDay():now()->endOfDay();
-        if($from->gt($to))[$from,$to]=[$to->copy()->startOfDay(),$from->copy()->endOfDay()];
-        $latest=$from->copy()->addYear()->subDay()->endOfDay();
-        if($to->gt($latest))$to=$latest;
-
-        return[$from,$to];
-    }
-    private function cashflowSeries(Carbon $from,Carbon $to):array
-    {
-        $payments=Payment::whereBetween('paid_at',[$from->toDateString(),$to->toDateString()])->get(['amount','paid_at']);
-        $expenses=Expense::whereBetween('spent_at',[$from->toDateString(),$to->toDateString()])->get(['amount','spent_at']);
-        $days=$from->diffInDays($to)+1;
-        $granularity=$days<=31?'Harian':($days<=120?'Mingguan':'Bulanan');
-        $points=collect();
-        $cursor=$from->copy()->startOfDay();
-
-        while($cursor->lte($to)){
-            if($granularity==='Harian'){
-                $start=$cursor->copy();
-                $end=$cursor->copy()->endOfDay();
-                $label=$start->translatedFormat('d M');
-                $cursor->addDay();
-            }elseif($granularity==='Mingguan'){
-                $start=$cursor->copy();
-                $end=$cursor->copy()->addDays(6)->endOfDay()->min($to);
-                $label=$start->translatedFormat('d M').'–'.$end->translatedFormat('d M');
-                $cursor=$end->copy()->addDay()->startOfDay();
+            // next_due represents the LAST covered/rent-valid date. The next regular
+            // payment therefore starts on the following day. If this tenant has never
+            // had a regular payment, move_in is the first coverage date.
+            if($historical){
+                $periodStart=Carbon::parse($data['period_start'])->startOfDay();
             }else{
-                $start=$cursor->copy();
-                $end=$cursor->copy()->endOfMonth()->min($to);
-                $label=$start->translatedFormat('M Y');
-                $cursor=$end->copy()->addDay()->startOfDay();
+                $hasRegularPayment=$tenant->payments()->where('is_historical',false)->exists();
+                $periodStart=$hasRegularPayment
+                    ?$tenant->next_due->copy()->addDay()->startOfDay()
+                    :$tenant->move_in->copy()->startOfDay();
             }
-            $points->push([
-                'label'=>$label,
-                'income'=>(float)$payments->filter(fn(Payment $payment)=>$payment->paid_at->betweenIncluded($start,$end))->sum('amount'),
-                'expense'=>(float)$expenses->filter(fn(Expense $expense)=>$expense->spent_at->betweenIncluded($start,$end))->sum('amount'),
-            ]);
-        }
 
-        return[$points,$granularity];
+            [$period,$coverageEnd]=$this->paymentPeriod($periodStart,$cycle,(int)$data['periods']);
+            Payment::create(['tenant_id'=>$tenant->id,'amount'=>$data['amount'],'paid_at'=>$data['paid_at'],'period'=>$period,'billing_cycle'=>$cycle,'period_count'=>$data['periods'],'method'=>$data['method'],'recorded_by'=>$request->user()->id,'is_historical'=>$historical,'coverage_start'=>$periodStart,'coverage_end'=>$coverageEnd]);
+            if(!$historical)$tenant->update(['next_due'=>$coverageEnd,'billing_cycle'=>$cycle]);
+        });
+        return back()->with('success',$data['payment_mode']==='HISTORICAL'?'Pembayaran historis tersimpan tanpa mengubah jatuh tempo.':'Pembayaran tersimpan; masa sewa dan jatuh tempo otomatis diperbarui.');
     }
-    private function normalizeCurrencyFields(Request $request,array $fields):void { foreach($fields as $field){if($request->filled($field))$request->merge([$field=>preg_replace('/\D+/','',(string)$request->input($field))]);} }
-    private function billingRate(Room $room,string $cycle):float { return (float)match($cycle){'DAILY'=>$room->category->daily_price,'WEEKLY'=>$room->category->weekly_price,default=>$room->category->monthly_price}; }
+
+    public function expense(Request $request){$this->normalizeCurrencyFields($request,['amount']);$data=$request->validate(['title'=>['required','max:150'],'category'=>['required',Rule::exists('expense_categories','name')],'amount'=>['required','numeric','min:1'],'spent_at'=>['required','date'],'notes'=>['nullable','max:500']]);Expense::create($data+['recorded_by'=>$request->user()->id]);return back()->with('success','Pengeluaran dicatat.');}
+    public function storeExpenseCategory(Request $request){$this->ownerOnly($request);ExpenseCategory::create($this->expenseCategoryData($request));return back()->with('success','Kategori pengeluaran ditambahkan.');}
+    public function updateExpenseCategory(Request $request,ExpenseCategory $expenseCategory){$this->ownerOnly($request);$oldName=$expenseCategory->name;$data=$this->expenseCategoryData($request,$expenseCategory);abort_if($expenseCategory->is_system&&$oldName!==$data['name'],422,'Nama kategori sistem Maintenance tidak dapat diubah.');DB::transaction(function()use($expenseCategory,$oldName,$data){$expenseCategory->update($data);if($oldName!==$data['name'])Expense::where('category',$oldName)->update(['category'=>$data['name']]);});return back()->with('success','Kategori pengeluaran diperbarui.');}
+    public function destroyExpenseCategory(Request $request,ExpenseCategory $expenseCategory){$this->ownerOnly($request);abort_if($expenseCategory->is_system,422,'Kategori sistem Maintenance tidak dapat dihapus.');$expenseCategory->delete();return back()->with('success','Kategori dihapus; histori pengeluaran tetap tersimpan.');}
+    public function maintenance(Request $request){$this->normalizeCurrencyFields($request,['cost']);$data=$request->validate(['room_id'=>['required','exists:rooms,id'],'title'=>['required','max:150'],'status'=>['required',Rule::in(['DIJADWALKAN','DIKERJAKAN'])],'cost'=>['nullable','numeric','min:0'],'reported_at'=>['required','date'],'notes'=>['nullable','max:500']]);DB::transaction(function()use($data,$request){Maintenance::create($data+['recorded_by'=>$request->user()->id]);Room::whereKey($data['room_id'])->update(['status'=>'MAINTENANCE']);});return back()->with('success','Tiket maintenance dibuat.');}
+    public function maintenanceDone(Request $request,Maintenance $maintenance){abort_if($maintenance->status==='SELESAI',422,'Maintenance sudah selesai.');$this->normalizeCurrencyFields($request,['cost']);$data=$request->validate(['completed_at'=>['required','date','after_or_equal:'.$maintenance->reported_at->toDateString()],'cost'=>['required','numeric','min:0'],'notes'=>['nullable','max:500']]);DB::transaction(function()use($maintenance,$data,$request){$expense=(float)$data['cost']>0?Expense::create(['title'=>'Maintenance kamar #'.$maintenance->room->number.': '.$maintenance->title,'category'=>'Maintenance','amount'=>$data['cost'],'spent_at'=>$data['completed_at'],'notes'=>$data['notes']?:$maintenance->notes,'recorded_by'=>$request->user()->id]):null;$maintenance->update(['status'=>'SELESAI','completed_at'=>$data['completed_at'],'cost'=>$data['cost'],'notes'=>$data['notes']?:$maintenance->notes,'expense_id'=>$expense?->id]);$maintenance->room->update(['status'=>$maintenance->room->activeTenant()->exists()?'TERISI':'KOSONG']);});return back()->with('success','Maintenance selesai dan masuk histori.');}
+    public function updateWhatsAppTemplate(Request $request){$this->ownerOnly($request);$data=$request->validate(['template'=>['required','string','max:1500']]);AppSetting::updateOrCreate(['key'=>'whatsapp_payment_template'],['value'=>$data['template'],'updated_by'=>$request->user()->id]);return back()->with('success','Template follow-up WhatsApp diperbarui.');}
+
+    private function ownerOnly(Request $request):void{abort_unless($request->user()->isOwner(),403);}
+    private function categoryData(Request $request,?RoomCategory $category=null):array{$this->normalizeCurrencyFields($request,['daily_price','weekly_price','monthly_price']);return $request->validate(['name'=>['required','max:80',Rule::unique('room_categories','name')->ignore($category)],'daily_price'=>['required','numeric','min:0'],'weekly_price'=>['required','numeric','min:0'],'monthly_price'=>['required','numeric','min:0'],'color'=>['required','regex:/^#[0-9A-Fa-f]{6}$/']]);}
+    private function expenseCategoryData(Request $request,?ExpenseCategory $category=null):array{return $request->validate(['name'=>['required','max:60',Rule::unique('expense_categories','name')->ignore($category)],'color'=>['required','regex:/^#[0-9A-Fa-f]{6}$/'],'cost_type'=>['required',Rule::in(['DIRECT','OPERATING'])],'cost_behavior'=>['required',Rule::in(['VARIABLE','FIXED'])]]);}
+    private function reportRange(Request $request):array{$from=$request->string('from')->value();$to=$request->string('to')->value();$from=Carbon::hasFormat($from,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$from)->startOfDay():now()->startOfMonth();$to=Carbon::hasFormat($to,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$to)->endOfDay():now()->endOfDay();if($from->gt($to))[$from,$to]=[$to->copy()->startOfDay(),$from->copy()->endOfDay()];return[$from,$to];}
+    private function cashflowRange(Request $request):array{$from=$request->string('cashflow_from')->value();$to=$request->string('cashflow_to')->value();$from=Carbon::hasFormat($from,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$from)->startOfDay():now()->subMonths(5)->startOfMonth();$to=Carbon::hasFormat($to,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$to)->endOfDay():now()->endOfDay();if($from->gt($to))[$from,$to]=[$to->copy()->startOfDay(),$from->copy()->endOfDay()];$latest=$from->copy()->addYear()->subDay()->endOfDay();if($to->gt($latest))$to=$latest;return[$from,$to];}
+    private function cashflowSeries(Carbon $from,Carbon $to):array{$payments=Payment::whereBetween('paid_at',[$from->toDateString(),$to->toDateString()])->get(['amount','paid_at']);$expenses=Expense::whereBetween('spent_at',[$from->toDateString(),$to->toDateString()])->get(['amount','spent_at']);$days=$from->diffInDays($to)+1;$granularity=$days<=31?'Harian':($days<=120?'Mingguan':'Bulanan');$points=collect();$cursor=$from->copy()->startOfDay();while($cursor->lte($to)){if($granularity==='Harian'){$start=$cursor->copy();$end=$cursor->copy()->endOfDay();$label=$start->translatedFormat('d M');$cursor->addDay();}elseif($granularity==='Mingguan'){$start=$cursor->copy();$end=$cursor->copy()->addDays(6)->endOfDay()->min($to);$label=$start->translatedFormat('d M').'–'.$end->translatedFormat('d M');$cursor=$end->copy()->addDay()->startOfDay();}else{$start=$cursor->copy();$end=$cursor->copy()->endOfMonth()->min($to);$label=$start->translatedFormat('M Y');$cursor=$end->copy()->addDay()->startOfDay();}$points->push(['label'=>$label,'income'=>(float)$payments->filter(fn(Payment $payment)=>$payment->paid_at->betweenIncluded($start,$end))->sum('amount'),'expense'=>(float)$expenses->filter(fn(Expense $expense)=>$expense->spent_at->betweenIncluded($start,$end))->sum('amount')]);}return[$points,$granularity];}
+    private function normalizeCurrencyFields(Request $request,array $fields):void{foreach($fields as $field){if($request->filled($field))$request->merge([$field=>preg_replace('/\D+/','',(string)$request->input($field))]);}}
+    private function billingRate(Room $room,string $cycle):float{return(float)match($cycle){'DAILY'=>$room->category->daily_price,'WEEKLY'=>$room->category->weekly_price,default=>$room->category->monthly_price};}
     private function paymentPeriod(Carbon $start,string $cycle,int $count):array
     {
-        if($cycle==='DAILY'){
-            $end=$start->copy()->addDays($count-1);
-            $label=$count===1?$start->translatedFormat('d F Y'):$start->translatedFormat('d M Y').' – '.$end->translatedFormat('d M Y');
-            return[$label,$start->copy()->addDays($count),$end];
-        }
-        if($cycle==='WEEKLY'){
-            $end=$start->copy()->addWeeks($count)->subDay();
-            return[$start->translatedFormat('d M Y').' – '.$end->translatedFormat('d M Y'),$start->copy()->addWeeks($count),$end];
-        }
-        $end=$start->copy()->addMonthsNoOverflow($count-1);
-        $label=$start->isSameMonth($end)?$start->translatedFormat('F Y'):$start->translatedFormat('F Y').' – '.$end->translatedFormat('F Y');
-        $nextDue=$start->copy()->addMonthsNoOverflow($count);
-        return[$label,$nextDue,$nextDue->copy()->subDay()];
+        if($cycle==='DAILY'){$end=$start->copy()->addDays($count-1);$label=$count===1?$start->translatedFormat('d F Y'):$start->translatedFormat('d M Y').' – '.$end->translatedFormat('d M Y');return[$label,$end];}
+        if($cycle==='WEEKLY'){$end=$start->copy()->addWeeks($count)->subDay();return[$start->translatedFormat('d M Y').' – '.$end->translatedFormat('d M Y'),$end];}
+        $lastStart=$start->copy()->addMonthsNoOverflow($count-1);$end=$start->copy()->addMonthsNoOverflow($count)->subDay();$label=$count===1?$start->translatedFormat('F Y'):$start->translatedFormat('F Y').' – '.$lastStart->translatedFormat('F Y');return[$label,$end];
     }
 }
