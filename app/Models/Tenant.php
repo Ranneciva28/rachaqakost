@@ -43,6 +43,28 @@ class Tenant extends Model
         };
     }
 
+    public function daysUntilDue(): int
+    {
+        return (int) today()->startOfDay()->diffInDays($this->next_due->copy()->startOfDay(), false);
+    }
+
+    public function isOverdue(): bool
+    {
+        return $this->daysUntilDue() < 0;
+    }
+
+    public function overdueDays(): int
+    {
+        return max(0, -$this->daysUntilDue());
+    }
+
+    public function dueStatusLabel(): string
+    {
+        return $this->isOverdue()
+            ? 'Terlambat H+'.$this->overdueDays()
+            : $this->next_due->translatedFormat('d M');
+    }
+
     public function whatsappPhone(): ?string
     {
         $phone = preg_replace('/\D+/', '', $this->phone);
@@ -62,7 +84,7 @@ class Tenant extends Model
             return null;
         }
 
-        $days = (int) today()->diffInDays($this->next_due, false);
+        $days = $this->daysUntilDue();
         $status = match (true) {
             $days < 0 => 'sudah lewat '.abs($days).' hari',
             $days === 0 => 'jatuh tempo hari ini',
