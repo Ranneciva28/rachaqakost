@@ -53,6 +53,11 @@ class Tenant extends Model
         return $this->daysUntilDue() < 0;
     }
 
+    public function isDueToday(): bool
+    {
+        return $this->daysUntilDue() === 0;
+    }
+
     public function overdueDays(): int
     {
         return max(0, -$this->daysUntilDue());
@@ -60,9 +65,11 @@ class Tenant extends Model
 
     public function dueStatusLabel(): string
     {
-        return $this->isOverdue()
-            ? 'Terlambat H+'.$this->overdueDays()
-            : $this->next_due->translatedFormat('d M');
+        return match (true) {
+            $this->isOverdue() => 'Terlambat H+'.$this->overdueDays(),
+            $this->isDueToday() => 'Jatuh Tempo Hari Ini',
+            default => $this->next_due->translatedFormat('d M'),
+        };
     }
 
     public function whatsappPhone(): ?string
