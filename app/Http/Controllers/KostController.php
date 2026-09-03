@@ -85,7 +85,6 @@ class KostController extends Controller
     {
         $data=$request->validate(['room_id'=>['required','exists:rooms,id'],'name'=>['required','max:120'],'phone'=>['required','max:30'],'identity_number'=>['nullable','max:40'],'move_in'=>['required','date'],'next_due'=>['required','date','after_or_equal:move_in'],'billing_cycle'=>['required',Rule::in(['DAILY','WEEKLY','MONTHLY'])]]);
         $room=Room::with('category')->findOrFail($data['room_id']); abort_if($room->status!=='KOSONG'||$room->activeTenant()->exists(),422,'Kamar tidak tersedia.');
-        abort_if($this->billingRate($room,$data['billing_cycle'])<=0,422,'Harga untuk siklus tagihan tersebut belum diatur pada kategori kamar.');
         DB::transaction(function()use($data,$room){Tenant::create($data+['active'=>true]);$room->update(['status'=>'TERISI']);});
         return back()->with('success','Penghuni check-in; kamar otomatis terisi.');
     }
@@ -104,7 +103,7 @@ class KostController extends Controller
         $targetRoom=Room::findOrFail($data['room_id']);
         $roomChanged=(int)$tenant->room_id!==(int)$targetRoom->id;
         if($tenant->active&&$roomChanged)abort_if($targetRoom->status!=='KOSONG'||$targetRoom->activeTenant()->exists(),422,'Kamar tujuan tidak tersedia. Pilih kamar kosong.');
-        if($tenant->active){$targetRoom->loadMissing('category');abort_if($this->billingRate($targetRoom,$data['billing_cycle'])<=0,422,'Harga untuk siklus tagihan tersebut belum diatur pada kategori kamar.');$data['move_out']=null;}
+        if($tenant->active)$data['move_out']=null;
         DB::transaction(function()use($tenant,$targetRoom,$roomChanged,$data){$oldRoom=$tenant->room;$tenant->update($data);if($tenant->active&&$roomChanged){$oldRoom->update(['status'=>$oldRoom->maintenances()->where('status','!=','SELESAI')->exists()?'MAINTENANCE':'KOSONG']);$targetRoom->update(['status'=>'TERISI']);}});
         return back()->with('success','Data penghuni berhasil diperbarui.');
     }
@@ -119,7 +118,6 @@ class KostController extends Controller
             abort_if(!$historical&&!$tenant->active,422,'Pembayaran reguler hanya dapat dicatat untuk penghuni aktif.');
             abort_if($historical&&empty($data['period_start']),422,'Periode awal wajib diisi untuk pembayaran historis.');
             $cycle=$data['billing_cycle'];
-            abort_if($this->billingRate($tenant->room,$cycle)<=0,422,'Tarif untuk siklus pembayaran tersebut belum diatur pada kategori kamar.');
             $limit=match($cycle){'DAILY'=>365,'WEEKLY'=>52,default=>24};
             abort_if((int)$data['periods']>$limit,422,'Jumlah periode melebihi batas untuk siklus tagihan ini.');
 
@@ -157,7 +155,6 @@ class KostController extends Controller
     private function cashflowRange(Request $request):array{$from=$request->string('cashflow_from')->value();$to=$request->string('cashflow_to')->value();$from=Carbon::hasFormat($from,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$from)->startOfDay():now()->subMonths(5)->startOfMonth();$to=Carbon::hasFormat($to,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$to)->endOfDay():now()->endOfDay();if($from->gt($to))[$from,$to]=[$to->copy()->startOfDay(),$from->copy()->endOfDay()];$latest=$from->copy()->addYear()->subDay()->endOfDay();if($to->gt($latest))$to=$latest;return[$from,$to];}
     private function cashflowSeries(Carbon $from,Carbon $to):array{$payments=Payment::whereBetween('paid_at',[$from->toDateString(),$to->toDateString()])->get(['amount','paid_at']);$expenses=Expense::whereBetween('spent_at',[$from->toDateString(),$to->toDateString()])->get(['amount','spent_at']);$days=$from->diffInDays($to)+1;$granularity=$days<=31?'Harian':($days<=120?'Mingguan':'Bulanan');$points=collect();$cursor=$from->copy()->startOfDay();while($cursor->lte($to)){if($granularity==='Harian'){$start=$cursor->copy();$end=$cursor->copy()->endOfDay();$label=$start->translatedFormat('d M');$cursor->addDay();}elseif($granularity==='Mingguan'){$start=$cursor->copy();$end=$cursor->copy()->addDays(6)->endOfDay()->min($to);$label=$start->translatedFormat('d M').'–'.$end->translatedFormat('d M');$cursor=$end->copy()->addDay()->startOfDay();}else{$start=$cursor->copy();$end=$cursor->copy()->endOfMonth()->min($to);$label=$start->translatedFormat('M Y');$cursor=$end->copy()->addDay()->startOfDay();}$points->push(['label'=>$label,'income'=>(float)$payments->filter(fn(Payment $payment)=>$payment->paid_at->betweenIncluded($start,$end))->sum('amount'),'expense'=>(float)$expenses->filter(fn(Expense $expense)=>$expense->spent_at->betweenIncluded($start,$end))->sum('amount')]);}return[$points,$granularity];}
     private function normalizeCurrencyFields(Request $request,array $fields):void{foreach($fields as $field){if($request->filled($field))$request->merge([$field=>preg_replace('/\D+/','',(string)$request->input($field))]);}}
-    private function billingRate(Room $room,string $cycle):float{return(float)match($cycle){'DAILY'=>$room->category->daily_price,'WEEKLY'=>$room->category->weekly_price,default=>$room->category->monthly_price};}
     private function paymentPeriod(Carbon $start,string $cycle,int $count):array
     {
         if($cycle==='DAILY'){$end=$start->copy()->addDays($count-1);$label=$count===1?$start->translatedFormat('d F Y'):$start->translatedFormat('d M Y').' – '.$end->translatedFormat('d M Y');return[$label,$end];}

@@ -114,6 +114,9 @@ document.addEventListener('DOMContentLoaded', () => {
             paymentAmount.value = autoValue;
             paymentAmount.dataset.autoValue = autoValue;
             formatCurrency(paymentAmount);
+        } else if (paymentAmount?.dataset.autoValue) {
+            paymentAmount.value = '';
+            paymentAmount.dataset.autoValue = '';
         }
     };
     const updatePaymentMode = () => {
@@ -134,15 +137,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const option = tenantSelect?.selectedOptions[0];
         if (paymentCycle && option?.value) {
             paymentCycle.value = option.dataset.cycle || 'MONTHLY';
-            paymentCycle.querySelectorAll('option').forEach(cycleOption => {
-                cycleOption.disabled = Number(option.dataset[cycleOption.value.toLowerCase()] || 0) <= 0;
-            });
-            if (paymentCycle.selectedOptions[0]?.disabled) {
-                const available = [...paymentCycle.options].find(cycleOption => !cycleOption.disabled);
-                if (available) paymentCycle.value = available.value;
-            }
-        } else {
-            paymentCycle?.querySelectorAll('option').forEach(cycleOption => cycleOption.disabled = false);
         }
         updatePaymentPeriod();
     };
@@ -162,25 +156,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const updateTenantBilling = () => {
         if (!tenantRoom || !tenantBillingCycle) return;
         const room = tenantRoom.selectedOptions[0];
-        let cycle = tenantBillingCycle.value;
-        tenantBillingCycle.querySelectorAll('option').forEach(option => {
-            const optionPrice = Number(room?.dataset[option.value.toLowerCase()] || 0);
-            option.disabled = Boolean(room?.value) && optionPrice <= 0;
-        });
-        if (tenantBillingCycle.selectedOptions[0]?.disabled) {
-            const available = [...tenantBillingCycle.options].find(option => !option.disabled);
-            if (available) {
-                available.selected = true;
-                cycle = available.value;
-            }
-        }
+        const cycle = tenantBillingCycle.value;
         const price = Number(room?.dataset[cycle.toLowerCase()] || 0);
         if (tenantRatePreview) {
             tenantRatePreview.textContent = !room?.value
                 ? 'Pilih kamar untuk melihat tarif.'
                 : price > 0
                     ? `Tarif ${cycleLabels[cycle]}: Rp ${new Intl.NumberFormat('id-ID').format(price)} per periode.`
-                    : `Tarif ${cycleLabels[cycle]} belum diatur untuk kamar ini.`;
+                    : `Tarif ${cycleLabels[cycle]} belum diatur; nominal pembayaran nanti diisi manual.`;
         }
         const moveIn = parseLocalDate(tenantMoveIn?.value);
         if (moveIn && tenantNextDue) tenantNextDue.value = toDateValue(addCycle(moveIn, cycle, 1));
