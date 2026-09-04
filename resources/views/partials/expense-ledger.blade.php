@@ -18,5 +18,44 @@
 </form>
 </article>
 <div class="ledger-result-summary"><span><b>{{ number_format($expenses->total(),0,',','.') }}</b> pengeluaran ditemukan</span><span>Total nominal hasil filter <b>Rp {{ number_format($expenseFilteredTotal,0,',','.') }}</b></span></div>
-<article class="panel tablewrap"><table class="table"><thead><tr><th>Tanggal</th><th>Pengeluaran</th><th>Kategori</th><th>Pencatat</th><th>Nominal</th></tr></thead><tbody>@forelse($expenses as $e)@php($expenseColor=$expenseCategories->firstWhere('name',$e->category)?->color ?? '#DF8A42')<tr><td>{{ $e->spent_at->format('d M Y') }}</td><td><strong>{{ $e->title }}</strong><small>{{ $e->notes?:'Tanpa catatan' }} @if($e->import_batch_id)<span class="history-pill import-pill">Import</span>@endif</small></td><td><span class="expense-label" style="--accent:{{ $expenseColor }}">{{ $e->category }}</span></td><td>{{ $e->recorder->name }}</td><td><strong>Rp {{ number_format($e->amount,0,',','.') }}</strong></td></tr>@empty<tr><td colspan="5" class="empty">Tidak ada pengeluaran yang cocok dengan filter.</td></tr>@endforelse</tbody></table></article>
+<article class="panel tablewrap"><table class="table"><thead><tr><th>Tanggal</th><th>Pengeluaran</th><th>Kategori</th><th>Pencatat</th><th>Nominal</th>@if(auth()->user()->isOwner())<th>Aksi</th>@endif</tr></thead><tbody>
+@forelse($expenses as $e)
+    @php($expenseColor=$expenseCategories->firstWhere('name',$e->category)?->color ?? '#DF8A42')
+    <tr>
+        <td>{{ $e->spent_at->format('d M Y') }}</td>
+        <td><strong>{{ $e->title }}</strong><small>{{ $e->notes?:'Tanpa catatan' }} @if($e->maintenance)<span class="history-pill">Maintenance</span>@endif @if($e->import_batch_id)<span class="history-pill import-pill">Import</span>@endif</small></td>
+        <td><span class="expense-label" style="--accent:{{ $expenseColor }}">{{ $e->category }}</span></td>
+        <td>{{ $e->recorder->name }}</td>
+        <td><strong>Rp {{ number_format($e->amount,0,',','.') }}</strong></td>
+        @if(auth()->user()->isOwner())
+        <td><button type="button" class="btn secondary small expense-edit-button"
+            data-action="{{ route('expenses.update',$e) }}"
+            data-title="{{ $e->title }}"
+            data-category="{{ $e->category }}"
+            data-amount="{{ (int)$e->amount }}"
+            data-spent-at="{{ $e->spent_at->toDateString() }}"
+            data-notes="{{ $e->notes }}"
+            data-maintenance="{{ $e->maintenance?'1':'0' }}">Edit</button></td>
+        @endif
+    </tr>
+@empty
+    <tr><td colspan="{{ auth()->user()->isOwner()?6:5 }}" class="empty">Tidak ada pengeluaran yang cocok dengan filter.</td></tr>
+@endforelse
+</tbody></table></article>
 <x-ledger-pagination :paginator="$expenses" />
+
+@if(auth()->user()->isOwner())
+<dialog class="modal" id="expenseEditModal">
+    <div class="modalhead"><div><h2>Edit pengeluaran</h2><p>Ubah tanggal agar biaya masuk ke periode keuangan yang benar.</p></div><button class="close" data-close>×</button></div>
+    <form class="form" id="expenseEditForm" method="post">@csrf @method('PATCH')
+        <div class="field"><label>Nama pengeluaran</label><input name="title" maxlength="150" required></div>
+        <div class="formgrid">
+            <div class="field"><label>Kategori</label><select name="category" required>@foreach($expenseCategories as $category)<option value="{{ $category->name }}">{{ $category->name }}</option>@endforeach</select><small class="field-help" id="expenseEditCategoryHelp"></small></div>
+            <div class="field"><label>Nominal</label><div class="currency-input"><span>Rp</span><input type="text" name="amount" data-currency inputmode="numeric" required></div></div>
+            <div class="field"><label>Tanggal pengeluaran</label><input type="date" name="spent_at" required><small class="field-help">Tanggal ini menentukan periode pengeluaran di laporan keuangan.</small></div>
+        </div>
+        <div class="field"><label>Catatan</label><textarea name="notes" maxlength="500"></textarea></div>
+        <div class="modalfoot"><button type="button" class="btn secondary" data-close>Batal</button><button class="btn">Simpan perubahan</button></div>
+    </form>
+</dialog>
+@endif

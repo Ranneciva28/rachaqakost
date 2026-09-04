@@ -231,6 +231,58 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    const maintenanceStatus = document.getElementById('maintenanceStatus');
+    const maintenanceReportedAt = document.getElementById('maintenanceReportedAt');
+    const maintenanceCompletedAt = document.getElementById('maintenanceCompletedAt');
+    const maintenanceCompletedField = document.getElementById('maintenanceCompletedField');
+    const maintenanceCostLabel = document.getElementById('maintenanceCostLabel');
+    const maintenanceSubmit = document.getElementById('maintenanceSubmit');
+    const updateMaintenanceMode = () => {
+        const historical = maintenanceStatus?.value === 'SELESAI';
+        if (maintenanceCompletedField) maintenanceCompletedField.hidden = !historical;
+        if (maintenanceCompletedAt) {
+            maintenanceCompletedAt.disabled = !historical;
+            maintenanceCompletedAt.required = historical;
+            maintenanceCompletedAt.min = maintenanceReportedAt?.value || '';
+            if (historical && maintenanceReportedAt?.value && (!maintenanceCompletedAt.value || maintenanceCompletedAt.value < maintenanceReportedAt.value)) {
+                maintenanceCompletedAt.value = maintenanceReportedAt.value;
+            }
+        }
+        if (maintenanceCostLabel) maintenanceCostLabel.textContent = historical ? 'Biaya aktual' : 'Estimasi biaya';
+        if (maintenanceSubmit) maintenanceSubmit.textContent = historical ? 'Simpan histori' : 'Buat tiket';
+    };
+    maintenanceStatus?.addEventListener('change', updateMaintenanceMode);
+    maintenanceReportedAt?.addEventListener('change', updateMaintenanceMode);
+    updateMaintenanceMode();
+
+    const expenseEditModal = document.getElementById('expenseEditModal');
+    const expenseEditForm = document.getElementById('expenseEditForm');
+    const expenseEditCategoryHelp = document.getElementById('expenseEditCategoryHelp');
+    document.querySelectorAll('.expense-edit-button').forEach(button => {
+        button.addEventListener('click', () => {
+            if (!expenseEditModal || !expenseEditForm) return;
+            const category = expenseEditForm.elements.namedItem('category');
+            const amount = expenseEditForm.elements.namedItem('amount');
+            const maintenance = button.dataset.maintenance === '1';
+            expenseEditForm.action = button.dataset.action;
+            expenseEditForm.elements.namedItem('title').value = button.dataset.title || '';
+            category.value = button.dataset.category || '';
+            category.disabled = maintenance;
+            amount.value = button.dataset.amount || '';
+            formatCurrency(amount);
+            expenseEditForm.elements.namedItem('spent_at').value = button.dataset.spentAt || '';
+            expenseEditForm.elements.namedItem('notes').value = button.dataset.notes || '';
+            if (expenseEditCategoryHelp) expenseEditCategoryHelp.textContent = maintenance
+                ? 'Kategori Maintenance dijaga otomatis agar tetap sinkron dengan tiket.'
+                : '';
+            expenseEditModal.showModal();
+        });
+    });
+    expenseEditForm?.addEventListener('submit', () => {
+        const category = expenseEditForm.elements.namedItem('category');
+        if (category) category.disabled = false;
+    });
+
     const cashflowValue = document.getElementById('cashflowValue');
     document.querySelectorAll('.cashflow-filter').forEach(form => {
         const from = form.querySelector('[name="cashflow_from"]');

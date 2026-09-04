@@ -78,7 +78,7 @@ class LedgerTableService
 
     public function expenses(array $filters): array
     {
-        $query = Expense::query()->with('recorder');
+        $query = Expense::query()->with(['recorder', 'maintenance']);
 
         if ($filters['search']) {
             $like = $this->like($filters['search']);
