@@ -140,15 +140,50 @@ class KostController extends Controller
         return back()->with('success',$data['payment_mode']==='HISTORICAL'?'Pembayaran historis tersimpan tanpa mengubah jatuh tempo.':'Pembayaran tersimpan; masa sewa dan jatuh tempo otomatis diperbarui.');
     }
 
-    public function expense(Request $request){$this->normalizeCurrencyFields($request,['amount']);$data=$request->validate(['title'=>['required','max:150'],'category'=>['required',Rule::exists('expense_categories','name')],'amount'=>['required','numeric','min:1'],'spent_at'=>['required','date'],'notes'=>['nullable','max:500']]);Expense::create($data+['recorded_by'=>$request->user()->id]);return back()->with('success','Pengeluaran dicatat.');}
+    public function expense(Request $request){$data=$this->expenseData($request);Expense::create($data+['recorded_by'=>$request->user()->id]);return back()->with('success','Pengeluaran dicatat.');}
+    public function updateExpense(Request $request,Expense $expense){$this->ownerOnly($request);$data=$this->expenseData($request);$maintenance=$expense->maintenance;if($maintenance)$data['category']='Maintenance';DB::transaction(function()use($expense,$data,$maintenance){$expense->update($data);if($maintenance)$maintenance->update(['cost'=>$data['amount'],'completed_at'=>$data['spent_at']]);});return back()->with('success','Pengeluaran dan periode keuangan berhasil diperbarui.');}
     public function storeExpenseCategory(Request $request){$this->ownerOnly($request);ExpenseCategory::create($this->expenseCategoryData($request));return back()->with('success','Kategori pengeluaran ditambahkan.');}
     public function updateExpenseCategory(Request $request,ExpenseCategory $expenseCategory){$this->ownerOnly($request);$oldName=$expenseCategory->name;$data=$this->expenseCategoryData($request,$expenseCategory);abort_if($expenseCategory->is_system&&$oldName!==$data['name'],422,'Nama kategori sistem Maintenance tidak dapat diubah.');DB::transaction(function()use($expenseCategory,$oldName,$data){$expenseCategory->update($data);if($oldName!==$data['name'])Expense::where('category',$oldName)->update(['category'=>$data['name']]);});return back()->with('success','Kategori pengeluaran diperbarui.');}
     public function destroyExpenseCategory(Request $request,ExpenseCategory $expenseCategory){$this->ownerOnly($request);abort_if($expenseCategory->is_system,422,'Kategori sistem Maintenance tidak dapat dihapus.');$expenseCategory->delete();return back()->with('success','Kategori dihapus; histori pengeluaran tetap tersimpan.');}
-    public function maintenance(Request $request){$this->normalizeCurrencyFields($request,['cost']);$data=$request->validate(['room_id'=>['required','exists:rooms,id'],'title'=>['required','max:150'],'status'=>['required',Rule::in(['DIJADWALKAN','DIKERJAKAN'])],'cost'=>['nullable','numeric','min:0'],'reported_at'=>['required','date'],'notes'=>['nullable','max:500']]);DB::transaction(function()use($data,$request){Maintenance::create($data+['recorded_by'=>$request->user()->id]);Room::whereKey($data['room_id'])->update(['status'=>'MAINTENANCE']);});return back()->with('success','Tiket maintenance dibuat.');}
+    public function maintenance(Request $request)
+    {
+        $this->normalizeCurrencyFields($request, ['cost']);
+        $data=$request->validate([
+            'room_id'=>['required','exists:rooms,id'],
+            'title'=>['required','max:150'],
+            'status'=>['required',Rule::in(['DIJADWALKAN','DIKERJAKAN','SELESAI'])],
+            'cost'=>['nullable','numeric','min:0'],
+            'reported_at'=>['required','date'],
+            'completed_at'=>['nullable','required_if:status,SELESAI','date','after_or_equal:reported_at'],
+            'notes'=>['nullable','max:500'],
+        ]);
+        $room=Room::findOrFail($data['room_id']);
+        $completed=$data['status']==='SELESAI';
+        $cost=(float)($data['cost']??0);
+
+        DB::transaction(function()use($data,$request,$room,$completed,$cost){
+            $expense=$completed&&$cost>0?Expense::create([
+                'title'=>'Maintenance kamar #'.$room->number.': '.$data['title'],
+                'category'=>'Maintenance',
+                'amount'=>$cost,
+                'spent_at'=>$data['completed_at'],
+                'notes'=>$data['notes'],
+                'recorded_by'=>$request->user()->id,
+            ]):null;
+            Maintenance::create($data+['recorded_by'=>$request->user()->id,'expense_id'=>$expense?->id]);
+            if(!$completed)$room->update(['status'=>'MAINTENANCE']);
+        });
+
+        $message=$completed
+            ?($cost>0?'Maintenance historis dan pengeluarannya berhasil dicatat.':'Maintenance historis berhasil dicatat tanpa biaya.')
+            :'Tiket maintenance dibuat.';
+        return back()->with('success',$message);
+    }
     public function maintenanceDone(Request $request,Maintenance $maintenance){abort_if($maintenance->status==='SELESAI',422,'Maintenance sudah selesai.');$this->normalizeCurrencyFields($request,['cost']);$data=$request->validate(['completed_at'=>['required','date','after_or_equal:'.$maintenance->reported_at->toDateString()],'cost'=>['required','numeric','min:0'],'notes'=>['nullable','max:500']]);DB::transaction(function()use($maintenance,$data,$request){$expense=(float)$data['cost']>0?Expense::create(['title'=>'Maintenance kamar #'.$maintenance->room->number.': '.$maintenance->title,'category'=>'Maintenance','amount'=>$data['cost'],'spent_at'=>$data['completed_at'],'notes'=>$data['notes']?:$maintenance->notes,'recorded_by'=>$request->user()->id]):null;$maintenance->update(['status'=>'SELESAI','completed_at'=>$data['completed_at'],'cost'=>$data['cost'],'notes'=>$data['notes']?:$maintenance->notes,'expense_id'=>$expense?->id]);$maintenance->room->update(['status'=>$maintenance->room->activeTenant()->exists()?'TERISI':'KOSONG']);});return back()->with('success','Maintenance selesai dan masuk histori.');}
     public function updateWhatsAppTemplate(Request $request){$this->ownerOnly($request);$data=$request->validate(['template'=>['required','string','max:1500']]);AppSetting::updateOrCreate(['key'=>'whatsapp_payment_template'],['value'=>$data['template'],'updated_by'=>$request->user()->id]);return back()->with('success','Template follow-up WhatsApp diperbarui.');}
 
     private function ownerOnly(Request $request):void{abort_unless($request->user()->isOwner(),403);}
+    private function expenseData(Request $request):array{$this->normalizeCurrencyFields($request,['amount']);return $request->validate(['title'=>['required','max:150'],'category'=>['required',Rule::exists('expense_categories','name')],'amount'=>['required','numeric','min:1'],'spent_at'=>['required','date'],'notes'=>['nullable','max:500']]);}
     private function categoryData(Request $request,?RoomCategory $category=null):array{$this->normalizeCurrencyFields($request,['daily_price','weekly_price','monthly_price']);return $request->validate(['name'=>['required','max:80',Rule::unique('room_categories','name')->ignore($category)],'daily_price'=>['required','numeric','min:0'],'weekly_price'=>['required','numeric','min:0'],'monthly_price'=>['required','numeric','min:0'],'color'=>['required','regex:/^#[0-9A-Fa-f]{6}$/']]);}
     private function expenseCategoryData(Request $request,?ExpenseCategory $category=null):array{return $request->validate(['name'=>['required','max:60',Rule::unique('expense_categories','name')->ignore($category)],'color'=>['required','regex:/^#[0-9A-Fa-f]{6}$/'],'cost_type'=>['required',Rule::in(['DIRECT','OPERATING'])],'cost_behavior'=>['required',Rule::in(['VARIABLE','FIXED'])]]);}
     private function reportRange(Request $request):array{$from=$request->string('from')->value();$to=$request->string('to')->value();$from=Carbon::hasFormat($from,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$from)->startOfDay():now()->startOfMonth();$to=Carbon::hasFormat($to,'Y-m-d')?Carbon::createFromFormat('Y-m-d',$to)->endOfDay():now()->endOfDay();if($from->gt($to))[$from,$to]=[$to->copy()->startOfDay(),$from->copy()->endOfDay()];return[$from,$to];}
