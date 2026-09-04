@@ -231,30 +231,6 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    const maintenanceStatus = document.getElementById('maintenanceStatus');
-    const maintenanceReportedAt = document.getElementById('maintenanceReportedAt');
-    const maintenanceCompletedAt = document.getElementById('maintenanceCompletedAt');
-    const maintenanceCompletedField = document.getElementById('maintenanceCompletedField');
-    const maintenanceCostLabel = document.getElementById('maintenanceCostLabel');
-    const maintenanceSubmit = document.getElementById('maintenanceSubmit');
-    const updateMaintenanceMode = () => {
-        const historical = maintenanceStatus?.value === 'SELESAI';
-        if (maintenanceCompletedField) maintenanceCompletedField.hidden = !historical;
-        if (maintenanceCompletedAt) {
-            maintenanceCompletedAt.disabled = !historical;
-            maintenanceCompletedAt.required = historical;
-            maintenanceCompletedAt.min = maintenanceReportedAt?.value || '';
-            if (historical && maintenanceReportedAt?.value && (!maintenanceCompletedAt.value || maintenanceCompletedAt.value < maintenanceReportedAt.value)) {
-                maintenanceCompletedAt.value = maintenanceReportedAt.value;
-            }
-        }
-        if (maintenanceCostLabel) maintenanceCostLabel.textContent = historical ? 'Biaya aktual' : 'Estimasi biaya';
-        if (maintenanceSubmit) maintenanceSubmit.textContent = historical ? 'Simpan histori' : 'Buat tiket';
-    };
-    maintenanceStatus?.addEventListener('change', updateMaintenanceMode);
-    maintenanceReportedAt?.addEventListener('change', updateMaintenanceMode);
-    updateMaintenanceMode();
-
     const expenseEditModal = document.getElementById('expenseEditModal');
     const expenseEditForm = document.getElementById('expenseEditForm');
     const expenseEditCategoryHelp = document.getElementById('expenseEditCategoryHelp');

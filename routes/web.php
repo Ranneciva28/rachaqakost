@@ -12,6 +12,6 @@ Route::middleware('auth')->group(function(){
  Route::post('/payments',[KostController::class,'payment'])->name('payments.store');Route::post('/expenses',[KostController::class,'expense'])->name('expenses.store');Route::patch('/expenses/{expense}',[KostController::class,'updateExpense'])->name('expenses.update');
  Route::post('/expense-categories',[KostController::class,'storeExpenseCategory'])->name('expense-categories.store');Route::patch('/expense-categories/{expenseCategory}',[KostController::class,'updateExpenseCategory'])->name('expense-categories.update');Route::delete('/expense-categories/{expenseCategory}',[KostController::class,'destroyExpenseCategory'])->name('expense-categories.destroy');
  Route::patch('/settings/whatsapp-template',[KostController::class,'updateWhatsAppTemplate'])->name('settings.whatsapp-template');
- Route::post('/maintenances',[KostController::class,'maintenance'])->name('maintenances.store');Route::patch('/maintenances/{maintenance}/done',[KostController::class,'maintenanceDone'])->name('maintenances.done');
+ Route::post('/maintenances',[KostController::class,'maintenance'])->name('maintenances.store');
  Route::post('/users',[UserController::class,'store'])->name('users.store');Route::patch('/users/{user}',[UserController::class,'update'])->name('users.update');
 });
