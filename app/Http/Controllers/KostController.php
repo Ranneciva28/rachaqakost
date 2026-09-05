@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{AppSetting, Expense, ExpenseCategory, Maintenance, Payment, Room, RoomCategory, Tenant, User};
+use App\Models\{AppSetting, Expense, ExpenseCategory, Maintenance, Payment, Room, RoomCategory, Tenant, TenantDataForm, User};
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -12,13 +12,14 @@ use App\Services\LedgerTableService;
 class KostController extends Controller
 {
     private const DEFAULT_WHATSAPP_TEMPLATE = "Halo {nama}, kami dari RachaqaKost ingin mengingatkan pembayaran sewa kamar #{kamar} sebesar {nominal} yang {status}, tepatnya pada {jatuh_tempo}. Mohon konfirmasinya ya. Terima kasih.";
+    private const DEFAULT_TENANT_FORM_WHATSAPP_TEMPLATE = "Halo {nama}, mohon bantu lengkapi Formulir Data Penghuni RachaqaKost untuk kamar #{kamar} melalui link berikut:\n\n{link_formulir}\n\nStatus saat ini: {status_formulir}. Mohon pastikan data yang diisi benar sebelum dikirim. Terima kasih.";
 
     public function index(Request $request, LedgerTableService $ledger)
     {
         [$reportFrom, $reportTo] = $this->reportRange($request);
         [$cashflowFrom, $cashflowTo] = $this->cashflowRange($request);
         $rooms = Room::with(['category', 'activeTenant'])->withCount(['tenants', 'maintenances', 'importRows'])->orderBy('floor')->orderBy('number')->get();
-        $tenants = Tenant::with('room.category')->where('active', true)->orderBy('next_due')->get();
+        $tenants = Tenant::with(['room.category', 'tenantForm'])->where('active', true)->orderBy('next_due')->get();
         [$cashflow, $cashflowGranularity] = $this->cashflowSeries($cashflowFrom, $cashflowTo);
         $incomeQuery = Payment::whereBetween('paid_at', [$reportFrom->toDateString(), $reportTo->toDateString()]);
         $expenseQuery = Expense::whereBetween('spent_at', [$reportFrom->toDateString(), $reportTo->toDateString()]);
@@ -35,7 +36,8 @@ class KostController extends Controller
 
         return view('dashboard', [
             'activeTab'=>$activeTab, 'rooms'=>$rooms, 'categories'=>RoomCategory::withCount('rooms')->orderBy('name')->get(),
-            'tenants'=>$tenants, 'tenantHistory'=>Tenant::with('room.category')->where('active',false)->latest('move_out')->limit(40)->get(),
+            'tenants'=>$tenants, 'tenantHistory'=>Tenant::with(['room.category','tenantForm'])->where('active',false)->latest('move_out')->limit(40)->get(),
+            'tenantFormDrafts'=>TenantDataForm::with('tenant.room')->where('status','PENDING_APPROVAL')->latest('submitted_at')->get(),
             'paymentTenants'=>Tenant::with('room.category')->orderByDesc('active')->orderBy('name')->get(),
             'payments'=>$payments, 'paymentFilters'=>$paymentFilters, 'paymentFilteredTotal'=>$paymentFilteredTotal,
             'expenses'=>$expenses, 'expenseFilters'=>$expenseFilters, 'expenseFilteredTotal'=>$expenseFilteredTotal,
@@ -50,6 +52,7 @@ class KostController extends Controller
             'cashflow'=>$cashflow, 'maxCashflow'=>max(1,(float)$cashflow->flatMap(fn($p)=>[$p['income'],$p['expense']])->max()),
             'users'=>$request->user()->isOwner()?User::orderBy('name')->get():collect(),
             'whatsappTemplate'=>AppSetting::where('key','whatsapp_payment_template')->value('value') ?: self::DEFAULT_WHATSAPP_TEMPLATE,
+            'tenantFormWhatsAppTemplate'=>AppSetting::where('key','tenant_form_whatsapp_template')->value('value') ?: self::DEFAULT_TENANT_FORM_WHATSAPP_TEMPLATE,
         ]);
     }
 

@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 
 class Tenant extends Model
 {
@@ -23,6 +24,24 @@ class Tenant extends Model
     public function importBatch()
     {
         return $this->belongsTo(ImportBatch::class);
+    }
+
+    public function tenantForm()
+    {
+        return $this->hasOne(TenantDataForm::class);
+    }
+
+    protected static function booted(): void
+    {
+        static::creating(function (Tenant $tenant) {
+            if ($tenant->form_token) return;
+            $phone = preg_replace('/\D+/', '', (string) $tenant->phone);
+            $identity = preg_replace('/\D+/', '', (string) $tenant->identity_number);
+            $prefix = str_pad(substr($phone, -4), 4, '0', STR_PAD_LEFT).str_pad(substr($identity, -3), 3, '0', STR_PAD_LEFT);
+            do $token = $prefix.'-'.Str::lower(Str::random(24));
+            while (static::where('form_token', $token)->exists());
+            $tenant->form_token = $token;
+        });
     }
 
     public function billingRate(): float
@@ -108,6 +127,28 @@ class Tenant extends Model
             '{status}' => $status,
         ]);
 
+        return 'https://wa.me/'.$phone.'?text='.rawurlencode($message);
+    }
+
+    public function formStatusLabel(): string
+    {
+        return $this->tenantForm?->statusLabel() ?? 'Formulir Belum Diisi';
+    }
+
+    public function formStatusBadge(): string
+    {
+        return $this->tenantForm?->statusBadge() ?? 'gray';
+    }
+
+    public function formWhatsappUrl(string $template): ?string
+    {
+        if (! $phone = $this->whatsappPhone()) return null;
+        $message = strtr($template, [
+            '{nama}' => $this->name,
+            '{kamar}' => $this->room->number,
+            '{link_formulir}' => route('tenant-form.public', $this->form_token),
+            '{status_formulir}' => $this->formStatusLabel(),
+        ]);
         return 'https://wa.me/'.$phone.'?text='.rawurlencode($message);
     }
 }
