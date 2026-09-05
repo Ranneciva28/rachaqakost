@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}"><title>Attachment Formulir — {{ $tenant->name }}</title><link rel="stylesheet" href="{{ asset('assets/tenant-form.css') }}?v=20260905"></head>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}"><title>Attachment Formulir — {{ $tenant->name }}</title><link rel="stylesheet" href="{{ asset('assets/tenant-form.css') }}?v=20260905-clear"></head>
 <body>
 <main class="public-form-shell attachment-shell">
     <div class="attachment-nav"><a href="{{ route('dashboard',['tab'=>'tenants']) }}">← Kembali ke Data Penghuni</a><button type="button" onclick="window.print()">Cetak / Simpan PDF</button></div>
@@ -10,10 +10,11 @@
     <div class="public-form">@include('tenant-forms.form-fields')</div>
     @if(auth()->user()->isOwner())
     <section class="approval-panel">
-        <div><b>Kontrol Owner/Admin</b><p>Validasi mengunci formulir sebagai data sah. Revisi membuka link yang sama agar penghuni dapat memperbaiki data.</p></div>
+        <div><b>Kontrol Owner/Admin</b><p>Validasi mengunci formulir sebagai data sah. Revisi membuka formulir untuk diperbaiki. Clear menghapus seluruh jawaban dan attachment, lalu mengembalikannya ke status Formulir Belum Diisi.</p></div>
         <div class="approval-actions">
             @if($form->status==='PENDING_APPROVAL')<form method="post" action="{{ route('tenant-form.validate',$tenant) }}">@csrf @method('PATCH')<button class="approve">Validasi Formulir</button></form>@endif
             @if($form->status!=='REVISION')<form method="post" action="{{ route('tenant-form.revision',$tenant) }}" onsubmit="return confirm('Buka kembali formulir untuk direvisi penghuni? Status validasi sebelumnya akan dibatalkan.')">@csrf @method('PATCH')<button class="revision-button">Revisi Formulir</button></form>@endif
+            <form method="post" action="{{ route('tenant-form.clear',$tenant) }}" data-confirm="Yakin menghapus formulir ini? Seluruh jawaban dan attachment KTP akan dihapus permanen, lalu status kembali menjadi Formulir Belum Diisi.">@csrf @method('DELETE')<button class="clear-button">Clear Formulir</button></form>
         </div>
     </section>
     @endif

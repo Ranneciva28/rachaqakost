@@ -92,6 +92,15 @@ class TenantDataFormController extends Controller
         return back()->with('success','Mode revisi dibuka. Penghuni dapat mengubah formulir melalui link yang sama.');
     }
 
+    public function clearForm(Request $request,Tenant $tenant)
+    {
+        $this->ownerOnly($request);
+        $form=$tenant->tenantForm()->firstOrFail();
+        DB::transaction(fn()=>$form->delete());
+        return redirect()->route('dashboard',['tab'=>'tenants'])
+            ->with('success','Formulir '.$tenant->name.' sudah dikembalikan ke kondisi awal. Seluruh jawaban dan attachment telah dihapus.');
+    }
+
     public function updateTemplate(Request $request)
     {
         $this->ownerOnly($request);$data=$request->validate(['template'=>['required','string','max:1500']]);
