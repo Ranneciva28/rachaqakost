@@ -1,6 +1,4 @@
 (() => {
-    let confirmedForm = null;
-
     document.querySelectorAll('form[action$="/tenants"]').forEach(form => {
         form.method = 'post';
         form.querySelectorAll('button:not([type]), button[type="submit"]').forEach(button => {
@@ -14,10 +12,6 @@
         if (!(form instanceof HTMLFormElement)) return;
         const path = new URL(form.action, window.location.href).pathname;
         if (form.method.toLowerCase() === 'get' || path === '/logout' || form.hasAttribute('data-no-confirm')) return;
-        if (confirmedForm === form) {
-            confirmedForm = null;
-            return;
-        }
         if (form.hasAttribute('onsubmit')) return;
 
         event.preventDefault();
@@ -37,7 +31,25 @@
             || `Yakin ingin melanjutkan “${action}”? Pastikan seluruh data sudah benar sebelum dikonfirmasi.`;
 
         if (!window.confirm(message)) return;
-        confirmedForm = form;
-        form.requestSubmit(event.submitter || undefined);
+
+        const submitter = event.submitter;
+        if (submitter instanceof HTMLButtonElement || submitter instanceof HTMLInputElement) {
+            submitter.disabled = true;
+            submitter.setAttribute('aria-busy', 'true');
+            submitter.dataset.originalLabel = submitter.value || submitter.textContent || '';
+
+            if (submitter instanceof HTMLInputElement) {
+                submitter.value = 'Memproses...';
+            } else {
+                submitter.textContent = 'Memproses...';
+            }
+        }
+
+        form.setAttribute('aria-busy', 'true');
+
+        // Jalankan submit native setelah event saat ini selesai. Memanggil
+        // requestSubmit() dari dalam handler submit dapat diabaikan browser
+        // karena dianggap submit re-entrant, sehingga sebelumnya perlu klik dua kali.
+        queueMicrotask(() => HTMLFormElement.prototype.submit.call(form));
     }, true);
 })();
