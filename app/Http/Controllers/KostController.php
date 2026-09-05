@@ -125,13 +125,30 @@ class KostController extends Controller
         $this->normalizeCurrencyFields($request, ['amount']);
         $data=$request->validate(['tenant_id'=>['required','exists:tenants,id'],'amount'=>['required','numeric','min:1'],'paid_at'=>['required','date'],'method'=>['required',Rule::in(['Transfer','Cash','QRIS'])],'periods'=>['required','integer','min:1','max:365'],'payment_mode'=>['required',Rule::in(['REGULAR','HISTORICAL'])],'billing_cycle'=>['required',Rule::in(['DAILY','WEEKLY','MONTHLY'])],'period_start'=>['nullable','date']]);
         DB::transaction(function()use($data,$request){
-            $tenant=Tenant::with('room.category')->findOrFail($data['tenant_id']);
+            // Lock the tenant row so rapid double submits for the same tenant are serialized.
+            // The second request will wait, then see the payment created by the first request.
+            $tenant=Tenant::with('room.category')->whereKey($data['tenant_id'])->lockForUpdate()->firstOrFail();
             $historical=$data['payment_mode']==='HISTORICAL';
             abort_if(!$historical&&!$tenant->active,422,'Pembayaran reguler hanya dapat dicatat untuk penghuni aktif.');
             abort_if($historical&&empty($data['period_start']),422,'Periode awal wajib diisi untuk pembayaran historis.');
             $cycle=$data['billing_cycle'];
             $limit=match($cycle){'DAILY'=>365,'WEEKLY'=>52,default=>24};
             abort_if((int)$data['periods']>$limit,422,'Jumlah periode melebihi batas untuk siklus tagihan ini.');
+
+            if(!$historical&&$cycle==='MONTHLY'){
+                $paidAt=Carbon::parse($data['paid_at'])->startOfDay();
+                $sameMonthRegularPayment=$tenant->payments()
+                    ->where('is_historical',false)
+                    ->where('billing_cycle','MONTHLY')
+                    ->whereBetween('paid_at',[$paidAt->copy()->startOfMonth()->toDateString(),$paidAt->copy()->endOfMonth()->toDateString()])
+                    ->exists();
+
+                abort_if(
+                    $sameMonthRegularPayment,
+                    422,
+                    'Pembayaran bulanan reguler untuk '.$tenant->name.' pada '.$paidAt->translatedFormat('F Y').' sudah tercatat. Jika membayar lebih dari satu bulan sekaligus, catat sebagai satu transaksi dan isi jumlah periode lebih dari 1.'
+                );
+            }
 
             // next_due represents the LAST covered/rent-valid date. The next regular
             // payment therefore starts on the following day. If this tenant has never
