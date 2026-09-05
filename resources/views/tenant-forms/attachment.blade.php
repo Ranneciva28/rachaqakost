@@ -13,11 +13,11 @@
         <div><b>Kontrol Owner/Admin</b><p>Validasi mengunci formulir sebagai data sah. Revisi membuka formulir untuk diperbaiki. Clear menghapus seluruh jawaban dan attachment, lalu mengembalikannya ke status Formulir Belum Diisi.</p></div>
         <div class="approval-actions">
             @if($form->status==='PENDING_APPROVAL')<form method="post" action="{{ route('tenant-form.validate',$tenant) }}">@csrf @method('PATCH')<button class="approve">Validasi Formulir</button></form>@endif
-            @if($form->status!=='REVISION')<form method="post" action="{{ route('tenant-form.revision',$tenant) }}" onsubmit="return confirm('Buka kembali formulir untuk direvisi penghuni? Status validasi sebelumnya akan dibatalkan.')">@csrf @method('PATCH')<button class="revision-button">Revisi Formulir</button></form>@endif
+            @if($form->status!=='REVISION')<form method="post" action="{{ route('tenant-form.revision',$tenant) }}" data-confirm="Buka kembali formulir untuk direvisi penghuni? Status validasi sebelumnya akan dibatalkan.">@csrf @method('PATCH')<button class="revision-button">Revisi Formulir</button></form>@endif
             <form method="post" action="{{ route('tenant-form.clear',$tenant) }}" data-confirm="Yakin menghapus formulir ini? Seluruh jawaban dan attachment KTP akan dihapus permanen, lalu status kembali menjadi Formulir Belum Diisi.">@csrf @method('DELETE')<button class="clear-button">Clear Formulir</button></form>
         </div>
     </section>
     @endif
     @if($form->validated_at)<div class="validation-proof">Divalidasi oleh {{ $form->validator?->name ?? 'Owner/Admin' }} pada {{ $form->validated_at->translatedFormat('d F Y, H:i') }}</div>@endif
-</main><script src="{{ asset('assets/confirm-actions.js') }}?v=20260905-2"></script>
+</main><script src="{{ asset('assets/confirm-actions.js') }}?v=20260905-3"></script>
 </body></html>
