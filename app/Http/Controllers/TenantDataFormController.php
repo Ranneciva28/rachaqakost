@@ -58,7 +58,16 @@ class TenantDataFormController extends Controller
     {
         abort_unless((int)$media->tenant_data_form_id===(int)$tenant->tenantForm?->id&&$media->kind==='KTP',404);
         $filename=preg_replace('/[\r\n"]+/','_',basename($media->original_name))?:'dokumen';
-        return response($media->contents,200,['Content-Type'=>$media->mime_type,'Content-Length'=>(string)$media->size,
+        $contents=$media->contents;
+        return response()->stream(function()use($contents){
+            if(is_resource($contents)){
+                $metadata=stream_get_meta_data($contents);
+                if($metadata['seekable']??false)rewind($contents);
+                fpassthru($contents);
+                return;
+            }
+            echo $contents;
+        },200,['Content-Type'=>$media->mime_type,'Content-Length'=>(string)$media->size,
             'Content-Disposition'=>'inline; filename="'.$filename.'"','X-Content-Type-Options'=>'nosniff','Cache-Control'=>'private, no-store']);
     }
 
