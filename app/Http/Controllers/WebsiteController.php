@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\{AppSetting, MediaFile, RoomCategory};
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 
 class WebsiteController extends Controller
@@ -27,7 +28,7 @@ class WebsiteController extends Controller
     public function uploadHero(Request $request)
     {
         $this->owner($request);$data=$request->validate(['photo'=>['required','image','mimes:jpg,jpeg,png,webp','max:5120']]);$file=$data['photo'];
-        DB::transaction(function()use($file){MediaFile::where('kind','HERO')->delete();MediaFile::create($this->fileData($file)+['kind'=>'HERO']);});
+        DB::transaction(function()use($file){MediaFile::where('kind','HERO')->delete();$this->createMedia($file,['kind'=>'HERO']);});
         return back()->with('success','Foto utama homepage diperbarui.');
     }
 
@@ -35,7 +36,7 @@ class WebsiteController extends Controller
     {
         $this->owner($request);$data=$request->validate(['photos'=>['required','array','max:8'],'photos.*'=>['required','image','mimes:jpg,jpeg,png,webp','max:5120']]);
         $existing=$category->photos()->count();abort_if($existing+count($data['photos'])>8,422,'Maksimal 8 foto untuk setiap kategori kamar.');
-        DB::transaction(function()use($category,$data,$existing){foreach($data['photos'] as $offset=>$file)MediaFile::create($this->fileData($file)+['kind'=>'CATEGORY','room_category_id'=>$category->id,'position'=>$existing+$offset+1]);});
+        DB::transaction(function()use($category,$data,$existing){foreach($data['photos'] as $offset=>$file)$this->createMedia($file,['kind'=>'CATEGORY','room_category_id'=>$category->id,'position'=>$existing+$offset+1]);});
         return back()->with('success','Foto kategori '.$category->name.' ditambahkan.');
     }
 
@@ -45,6 +46,19 @@ class WebsiteController extends Controller
         return back()->with('success','Foto dihapus dari homepage.');
     }
 
-    private function fileData($file):array{return['original_name'=>$file->getClientOriginalName(),'mime_type'=>$file->getMimeType()?:'application/octet-stream','size'=>$file->getSize(),'contents'=>file_get_contents($file->getRealPath()),'position'=>0];}
+    private function createMedia(UploadedFile $file,array $attributes):MediaFile
+    {
+        $stream=fopen($file->getRealPath(),'rb');
+        throw_if($stream===false,\RuntimeException::class,'File upload tidak dapat dibaca.');
+        try{
+            return MediaFile::create(array_merge([
+                'original_name'=>$file->getClientOriginalName(),
+                'mime_type'=>$file->getMimeType()?:'application/octet-stream',
+                'size'=>$file->getSize(),'contents'=>$stream,'position'=>0,
+            ],$attributes));
+        }finally{
+            fclose($stream);
+        }
+    }
     private function owner(Request $request):void{abort_unless($request->user()->isOwner(),403);}
 }

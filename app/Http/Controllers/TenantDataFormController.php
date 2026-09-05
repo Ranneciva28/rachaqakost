@@ -35,8 +35,14 @@ class TenantDataFormController extends Controller
             foreach($fields->where('type','file') as $field){
                 $file=data_get($validated,'files.'.$field->key);if(!$file)continue;
                 $form->uploads()->where('tenant_form_field_id',$field->id)->delete();
-                $form->uploads()->create(['kind'=>'KTP','tenant_form_field_id'=>$field->id,'original_name'=>$file->getClientOriginalName(),
-                    'mime_type'=>$file->getMimeType()?:'application/octet-stream','size'=>$file->getSize(),'contents'=>file_get_contents($file->getRealPath()),'position'=>0]);
+                $stream=fopen($file->getRealPath(),'rb');
+                throw_if($stream===false,\RuntimeException::class,'File upload tidak dapat dibaca.');
+                try{
+                    $form->uploads()->create(['kind'=>'KTP','tenant_form_field_id'=>$field->id,'original_name'=>$file->getClientOriginalName(),
+                        'mime_type'=>$file->getMimeType()?:'application/octet-stream','size'=>$file->getSize(),'contents'=>$stream,'position'=>0]);
+                }finally{
+                    fclose($stream);
+                }
             }
         });
         return redirect()->route('tenant-form.public',$tenant->form_token)->with('success','Formulir berhasil dikirim dan sedang menunggu validasi pengelola.');
