@@ -23,7 +23,7 @@
         <div class="notice revision"><b>Revisi dibuka.</b> Perbaiki data yang diperlukan lalu kirim kembali untuk divalidasi ulang.</div>
     @endif
 
-    <form method="post" action="{{ route('tenant-form.submit',$tenant->form_token) }}" class="public-form">@csrf
+    <form method="post" action="{{ route('tenant-form.submit',$tenant->form_token) }}" enctype="multipart/form-data" class="public-form">@csrf
         @include('tenant-forms.form-fields')
         @if($editable)
         <label class="declaration"><input type="checkbox" required><span>Saya menyatakan seluruh data yang saya isi benar dan dapat dipertanggungjawabkan.</span></label>

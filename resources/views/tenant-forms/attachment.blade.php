@@ -5,8 +5,8 @@
     <div class="attachment-nav"><a href="{{ route('dashboard',['tab'=>'tenants']) }}">← Kembali ke Data Penghuni</a><button type="button" onclick="window.print()">Cetak / Simpan PDF</button></div>
     <header class="public-brand"><span>K</span><div><b>RachaqaKost</b><small>Attachment Formulir Data Penghuni</small></div></header>
     @if(session('success'))<div class="notice success">✓ {{ session('success') }}</div>@endif
-    <section class="form-hero"><div><span class="eyebrow">KAMAR #{{ $tenant->room->number }}</span><h1>{{ $form->full_name }}</h1><p>Dikirim {{ $form->submitted_at->translatedFormat('d F Y, H:i') }}</p></div><span class="status-chip {{ $form->statusBadge() }}">{{ $form->statusLabel() }}</span></section>
-    @php($editable=false)
+    <section class="form-hero"><div><span class="eyebrow">KAMAR #{{ $tenant->room->number }}</span><h1>{{ $form->response('full_name',$tenant->name) }}</h1><p>Dikirim {{ $form->submitted_at->translatedFormat('d F Y, H:i') }}</p></div><span class="status-chip {{ $form->statusBadge() }}">{{ $form->statusLabel() }}</span></section>
+    @php($editable=false) @php($attachmentMode=true)
     <div class="public-form">@include('tenant-forms.form-fields')</div>
     @if(auth()->user()->isOwner())
     <section class="approval-panel">

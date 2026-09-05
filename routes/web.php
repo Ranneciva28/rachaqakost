@@ -1,10 +1,12 @@
 <?php
-use App\Http\Controllers\{AuthController,DatabaseExportController,FinanceController,ImportController,KostController,TenantDataFormController,UserController};use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\{AuthController,DatabaseExportController,FinanceController,HomeController,ImportController,KostController,MediaController,TenantDataFormController,TenantFormBuilderController,UserController,WebsiteController};use Illuminate\Support\Facades\Route;
+Route::get('/',[HomeController::class,'index'])->name('home');
+Route::get('/media/{media}',[MediaController::class,'show'])->whereNumber('media')->name('media.public');
 Route::get('/formpenghuni/{token}',[TenantDataFormController::class,'publicShow'])->middleware('throttle:60,1')->name('tenant-form.public');
 Route::post('/formpenghuni/{token}',[TenantDataFormController::class,'publicSubmit'])->middleware('throttle:5,1')->name('tenant-form.submit');
 Route::middleware('guest')->group(function(){Route::get('/login',[AuthController::class,'create'])->name('login');Route::post('/login',[AuthController::class,'store'])->middleware('throttle:6,1');});
 Route::middleware('auth')->group(function(){
- Route::get('/',[KostController::class,'index'])->name('dashboard');Route::post('/logout',[AuthController::class,'destroy'])->name('logout');
+ Route::get('/panel',[KostController::class,'index'])->name('dashboard');Route::get('/admin',fn()=>redirect()->route('dashboard'));Route::post('/logout',[AuthController::class,'destroy'])->name('logout');
  Route::get('/keuangan',[FinanceController::class,'index'])->name('finance');
  Route::post('/database/export',DatabaseExportController::class)->middleware('throttle:2,1')->name('database.export');
  Route::get('/imports',[ImportController::class,'index'])->name('imports.index');Route::get('/imports/template',[ImportController::class,'template'])->name('imports.template');Route::post('/imports/images',[ImportController::class,'uploadImages'])->name('imports.images');Route::post('/imports/csv',[ImportController::class,'uploadCsv'])->name('imports.csv');Route::get('/imports/{batch}',[ImportController::class,'show'])->name('imports.show');Route::patch('/imports/{batch}',[ImportController::class,'update'])->name('imports.update');Route::patch('/imports/{batch}/rooms',[ImportController::class,'mapRooms'])->name('imports.rooms');Route::post('/imports/{batch}/commit',[ImportController::class,'commit'])->name('imports.commit');Route::post('/imports/{batch}/undo',[ImportController::class,'undo'])->name('imports.undo');Route::delete('/imports/{batch}',[ImportController::class,'destroy'])->name('imports.destroy');
@@ -16,6 +18,10 @@ Route::middleware('auth')->group(function(){
  Route::patch('/settings/whatsapp-template',[KostController::class,'updateWhatsAppTemplate'])->name('settings.whatsapp-template');
  Route::patch('/settings/tenant-form-whatsapp-template',[TenantDataFormController::class,'updateTemplate'])->name('settings.tenant-form-whatsapp-template');
  Route::get('/tenants/{tenant}/form',[TenantDataFormController::class,'attachment'])->name('tenant-form.attachment');Route::patch('/tenants/{tenant}/form/validate',[TenantDataFormController::class,'validateForm'])->name('tenant-form.validate');Route::patch('/tenants/{tenant}/form/revision',[TenantDataFormController::class,'requestRevision'])->name('tenant-form.revision');
+ Route::get('/tenants/{tenant}/form/files/{media}',[TenantDataFormController::class,'downloadUpload'])->whereNumber('media')->name('tenant-form.file');
+ Route::post('/form-builder/sections',[TenantFormBuilderController::class,'storeSection'])->name('form-builder.sections.store');Route::patch('/form-builder/sections/{section}',[TenantFormBuilderController::class,'updateSection'])->name('form-builder.sections.update');Route::delete('/form-builder/sections/{section}',[TenantFormBuilderController::class,'destroySection'])->name('form-builder.sections.destroy');
+ Route::post('/form-builder/fields',[TenantFormBuilderController::class,'storeField'])->name('form-builder.fields.store');Route::patch('/form-builder/fields/{field}',[TenantFormBuilderController::class,'updateField'])->name('form-builder.fields.update');Route::delete('/form-builder/fields/{field}',[TenantFormBuilderController::class,'destroyField'])->name('form-builder.fields.destroy');
+ Route::patch('/website',[WebsiteController::class,'updateContent'])->name('website.update');Route::post('/website/hero',[WebsiteController::class,'uploadHero'])->name('website.hero');Route::post('/website/categories/{category}/photos',[WebsiteController::class,'uploadCategoryPhotos'])->name('website.category-photos');Route::delete('/website/media/{media}',[WebsiteController::class,'deleteMedia'])->name('website.media.destroy');
  Route::post('/maintenances',[KostController::class,'maintenance'])->name('maintenances.store');
  Route::post('/users',[UserController::class,'store'])->name('users.store');Route::patch('/users/{user}',[UserController::class,'update'])->name('users.update');
 });
