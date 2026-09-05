@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{AppSetting, Expense, ExpenseCategory, Maintenance, Payment, Room, RoomCategory, Tenant, TenantDataForm, User};
+use App\Models\{AppSetting, Expense, ExpenseCategory, Maintenance, MediaFile, Payment, Room, RoomCategory, Tenant, TenantDataForm, TenantFormSection, User};
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -26,8 +26,9 @@ class KostController extends Controller
         $income = (float) (clone $incomeQuery)->sum('amount');
         $expenseTotal = (float) (clone $expenseQuery)->sum('amount');
         $activeTab = $request->string('tab')->value() ?: 'dashboard';
-        $allowed = ['dashboard','rooms','tenants','payments','expenses','maintenance','users'];
-        if (!in_array($activeTab, $allowed, true) || ($activeTab === 'users' && !$request->user()->isOwner())) $activeTab = 'dashboard';
+        $allowed = ['dashboard','rooms','tenants','form-drafts','form-builder','payments','expenses','maintenance','website','users'];
+        $ownerTabs=['form-builder','website','users'];
+        if (!in_array($activeTab, $allowed, true) || (in_array($activeTab,$ownerTabs,true) && !$request->user()->isOwner())) $activeTab = 'dashboard';
         $paymentFilters=$ledger->paymentFilters($request);
         $expenseFilters=$ledger->expenseFilters($request);
         $payments=collect();$expenses=collect();$paymentFilteredTotal=0.0;$expenseFilteredTotal=0.0;
@@ -35,9 +36,11 @@ class KostController extends Controller
         if($activeTab==='expenses')[$expenses,$expenseFilteredTotal]=$ledger->expenses($expenseFilters);
 
         return view('dashboard', [
-            'activeTab'=>$activeTab, 'rooms'=>$rooms, 'categories'=>RoomCategory::withCount('rooms')->orderBy('name')->get(),
+            'activeTab'=>$activeTab, 'rooms'=>$rooms, 'categories'=>RoomCategory::with(['photos'=>fn($q)=>$q->metadata()])->withCount('rooms')->orderBy('name')->get(),
             'tenants'=>$tenants, 'tenantHistory'=>Tenant::with(['room.category','tenantForm'])->where('active',false)->latest('move_out')->limit(40)->get(),
             'tenantFormDrafts'=>TenantDataForm::with('tenant.room')->where('status','PENDING_APPROVAL')->latest('submitted_at')->get(),
+            'formSections'=>TenantFormSection::with('fields')->orderBy('position')->orderBy('id')->get(),
+            'websiteSettings'=>$this->websiteSettings(), 'homepageHero'=>MediaFile::metadata()->where('kind','HERO')->latest()->first(),
             'paymentTenants'=>Tenant::with('room.category')->orderByDesc('active')->orderBy('name')->get(),
             'payments'=>$payments, 'paymentFilters'=>$paymentFilters, 'paymentFilteredTotal'=>$paymentFilteredTotal,
             'expenses'=>$expenses, 'expenseFilters'=>$expenseFilters, 'expenseFilteredTotal'=>$expenseFilteredTotal,
@@ -187,6 +190,11 @@ class KostController extends Controller
     public function updateWhatsAppTemplate(Request $request){$this->ownerOnly($request);$data=$request->validate(['template'=>['required','string','max:1500']]);AppSetting::updateOrCreate(['key'=>'whatsapp_payment_template'],['value'=>$data['template'],'updated_by'=>$request->user()->id]);return back()->with('success','Template follow-up WhatsApp diperbarui.');}
 
     private function ownerOnly(Request $request):void{abort_unless($request->user()->isOwner(),403);}
+    private function websiteSettings():array
+    {
+        $defaults=WebsiteController::defaults();
+        $saved=AppSetting::whereIn('key',array_keys($defaults))->pluck('value','key')->all();return array_replace($defaults,$saved);
+    }
     private function expenseData(Request $request):array{$this->normalizeCurrencyFields($request,['amount']);return $request->validate(['title'=>['required','max:150'],'category'=>['required',Rule::exists('expense_categories','name')],'amount'=>['required','numeric','min:1'],'spent_at'=>['required','date'],'notes'=>['nullable','max:500']]);}
     private function categoryData(Request $request,?RoomCategory $category=null):array{$this->normalizeCurrencyFields($request,['daily_price','weekly_price','monthly_price']);return $request->validate(['name'=>['required','max:80',Rule::unique('room_categories','name')->ignore($category)],'daily_price'=>['required','numeric','min:0'],'weekly_price'=>['required','numeric','min:0'],'monthly_price'=>['required','numeric','min:0'],'color'=>['required','regex:/^#[0-9A-Fa-f]{6}$/']]);}
     private function expenseCategoryData(Request $request,?ExpenseCategory $category=null):array{return $request->validate(['name'=>['required','max:60',Rule::unique('expense_categories','name')->ignore($category)],'color'=>['required','regex:/^#[0-9A-Fa-f]{6}$/'],'cost_type'=>['required',Rule::in(['DIRECT','OPERATING'])],'cost_behavior'=>['required',Rule::in(['VARIABLE','FIXED'])]]);}
