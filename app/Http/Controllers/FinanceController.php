@@ -6,6 +6,7 @@ use App\Models\{Expense, ExpenseCategory, Payment};
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\DB;
 
 class FinanceController extends Controller
 {
@@ -69,6 +70,42 @@ class FinanceController extends Controller
 
         $trend = $this->trend($from, $to, $paymentRecords, $expenseRecords);
 
+        $paymentRoomSummary = Payment::query()
+            ->join('tenants', 'tenants.id', '=', 'payments.tenant_id')
+            ->join('rooms', 'rooms.id', '=', 'tenants.room_id')
+            ->whereBetween('payments.paid_at', [$from->toDateString(), $to->toDateString()])
+            ->groupBy('rooms.id', 'rooms.number')
+            ->orderBy('rooms.number')
+            ->get([
+                'rooms.id as room_id',
+                'rooms.number as room_number',
+                DB::raw('COUNT(payments.id) as transaction_count'),
+                DB::raw('SUM(payments.amount) as total_amount'),
+            ]);
+
+        $selectedPaymentRoom = $request->integer('payment_room') ?: null;
+        if ($selectedPaymentRoom && ! $paymentRoomSummary->contains('room_id', $selectedPaymentRoom)) {
+            $selectedPaymentRoom = null;
+        }
+        $selectedPaymentRoomNumber = $selectedPaymentRoom
+            ? $paymentRoomSummary->firstWhere('room_id', $selectedPaymentRoom)?->room_number
+            : null;
+
+        $paymentDetailQuery = Payment::query()
+            ->with(['tenant.room'])
+            ->whereBetween('paid_at', [$from->toDateString(), $to->toDateString()])
+            ->when($selectedPaymentRoom, fn ($query) => $query->whereHas(
+                'tenant',
+                fn ($tenantQuery) => $tenantQuery->where('room_id', $selectedPaymentRoom)
+            ));
+
+        $paymentDetailTotal = (float) (clone $paymentDetailQuery)->sum('amount');
+        $paymentDetails = $paymentDetailQuery
+            ->orderByDesc('paid_at')
+            ->orderByDesc('id')
+            ->paginate(100, ['*'], 'payment_page')
+            ->withQueryString();
+
         return view('finance', [
             'from'=>$from,
             'to'=>$to,
@@ -87,6 +124,11 @@ class FinanceController extends Controller
             'ratios'=>$ratios,
             'trend'=>$trend,
             'maxTrend'=>max(1, (float) $trend->flatMap(fn ($point) => [$point['income'], $point['expense']])->max()),
+            'paymentRoomSummary'=>$paymentRoomSummary,
+            'paymentDetails'=>$paymentDetails,
+            'paymentDetailTotal'=>$paymentDetailTotal,
+            'selectedPaymentRoom'=>$selectedPaymentRoom,
+            'selectedPaymentRoomNumber'=>$selectedPaymentRoomNumber,
             'comparison'=>[
                 'income'=>$this->change($income, $previousIncome),
                 'expense'=>$this->change($expenseTotal, $previousExpenseTotal),

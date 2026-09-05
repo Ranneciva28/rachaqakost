@@ -6,7 +6,8 @@
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>RachaqaKost — Laporan Keuangan</title>
     <link rel="stylesheet" href="{{ asset('assets/rachaqakost.css') }}">
-    <link rel="stylesheet" href="{{ asset('assets/rachaqakost-fixes.css') }}?v=20260817-import">
+    <link rel="stylesheet" href="{{ asset('assets/rachaqakost-fixes.css') }}?v=20260905-finance-detail">
+    <link rel="stylesheet" href="{{ asset('assets/finance-payment-detail.css') }}?v=20260905">
 </head>
 <body>
 @php
@@ -103,6 +104,40 @@ $comparisonText=function($value,$inverse=false){
                 <div class="cashflow-value" id="cashflowValue" hidden>Pilih salah satu bar.</div>
                 <div class="legend"><span><i class="dot"></i>Pendapatan</span><span><i class="dot orange"></i>Pengeluaran</span></div>
             </div>
+        </section>
+
+        <section class="finance-payment-section" id="detail-pembayaran">
+            <div class="sectionhead finance-payment-heading">
+                <div><h2>Detail pembayaran masuk</h2><p>Nomor kamar dan transaksi pembayaran yang diterima pada {{ $periodLabel }}.</p></div>
+                <form class="payment-room-filter" method="get" action="{{ route('finance') }}#detail-pembayaran">
+                    <input type="hidden" name="from" value="{{ $from->toDateString() }}">
+                    <input type="hidden" name="to" value="{{ $to->toDateString() }}">
+                    <label><span>Tampilkan kamar</span><select name="payment_room" onchange="this.form.submit()"><option value="">Semua kamar</option>@foreach($paymentRoomSummary as $room)<option value="{{ $room->room_id }}" @selected($selectedPaymentRoom==$room->room_id)>Kamar #{{ $room->room_number }}</option>@endforeach</select></label>
+                    @if($selectedPaymentRoom)<a class="btn secondary small" href="{{ route('finance',['from'=>$from->toDateString(),'to'=>$to->toDateString()]) }}#detail-pembayaran">Reset kamar</a>@endif
+                </form>
+            </div>
+
+            <div class="room-payment-summary">
+                @forelse($paymentRoomSummary as $room)
+                    <a class="room-payment-card {{ $selectedPaymentRoom==$room->room_id?'active':'' }}" href="{{ route('finance',['from'=>$from->toDateString(),'to'=>$to->toDateString(),'payment_room'=>$room->room_id]) }}#detail-pembayaran">
+                        <span>Kamar</span><strong>#{{ $room->room_number }}</strong><small>{{ number_format($room->transaction_count,0,',','.') }} transaksi</small><b>Rp {{ number_format($room->total_amount,0,',','.') }}</b>
+                    </a>
+                @empty
+                    <div class="empty room-payment-empty">Belum ada pembayaran masuk pada periode ini.</div>
+                @endforelse
+            </div>
+
+            <article class="panel payment-detail-panel">
+                <div class="panelhead"><div><h2>Transaksi pembayaran</h2><p>{{ $selectedPaymentRoomNumber ? 'Kamar #'.$selectedPaymentRoomNumber : 'Semua kamar' }} · berdasarkan tanggal uang diterima</p></div><div class="payment-detail-total"><small>{{ number_format($paymentDetails->total(),0,',','.') }} transaksi</small><strong>Rp {{ number_format($paymentDetailTotal,0,',','.') }}</strong></div></div>
+                <div class="tablewrap"><table class="table payment-detail-table"><thead><tr><th>Tanggal masuk</th><th>Kamar</th><th>Penghuni</th><th>Periode sewa</th><th>Metode</th><th>Nominal</th></tr></thead><tbody>
+                    @forelse($paymentDetails as $payment)
+                        <tr><td><strong>{{ $payment->paid_at->translatedFormat('d M Y') }}</strong><small>{{ $payment->is_historical?'Pembayaran historis':'Pembayaran reguler' }}</small></td><td><span class="room-number-pill">#{{ $payment->tenant->room->number }}</span></td><td><strong>{{ $payment->tenant->name }}</strong></td><td><strong>{{ $payment->period }}</strong><small>{{ match($payment->billing_cycle){'DAILY'=>'Harian','WEEKLY'=>'Mingguan',default=>'Bulanan'} }} · {{ $payment->period_count }} periode</small></td><td><span class="badge gray">{{ $payment->method }}</span></td><td><strong>Rp {{ number_format($payment->amount,0,',','.') }}</strong></td></tr>
+                    @empty
+                        <tr><td colspan="6" class="empty">Tidak ada transaksi pembayaran untuk filter ini.</td></tr>
+                    @endforelse
+                </tbody></table></div>
+            </article>
+            <x-ledger-pagination :paginator="$paymentDetails" />
         </section>
 
         <section class="finance-ratio-section">
