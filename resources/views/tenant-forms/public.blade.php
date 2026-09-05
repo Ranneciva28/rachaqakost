@@ -31,5 +31,5 @@
         @endif
     </form>
     <footer>Data hanya digunakan untuk administrasi penghuni RachaqaKost.</footer>
-</main>
+</main><script src="{{ asset('assets/confirm-actions.js') }}?v=20260905-2"></script>
 </body></html>

@@ -59,6 +59,12 @@ class KostController extends Controller
         ]);
     }
 
+    public function tenants(Request $request, LedgerTableService $ledger)
+    {
+        $request->query->set('tab','tenants');
+        return $this->index($request,$ledger);
+    }
+
     public function storeCategory(Request $request) { $this->ownerOnly($request); RoomCategory::create($this->categoryData($request)); return back()->with('success','Kategori berhasil ditambahkan.'); }
     public function updateCategory(Request $request, RoomCategory $category) { $this->ownerOnly($request); $category->update($this->categoryData($request,$category)); return back()->with('success','Kategori dan harga diperbarui.'); }
     public function destroyCategory(Request $request, RoomCategory $category) { $this->ownerOnly($request); if($category->rooms()->exists())return back()->withErrors(['category'=>'Kategori masih dipakai kamar. Pindahkan atau hapus kamar tersebut lebih dulu.']); $category->delete(); return back()->with('success','Kategori kamar berhasil dihapus.'); }
@@ -92,7 +98,7 @@ class KostController extends Controller
         $data=$request->validate(['room_id'=>['required','exists:rooms,id'],'name'=>['required','max:120'],'phone'=>['required','max:30'],'identity_number'=>['nullable','max:40'],'move_in'=>['required','date'],'next_due'=>['required','date','after_or_equal:move_in'],'billing_cycle'=>['required',Rule::in(['DAILY','WEEKLY','MONTHLY'])]]);
         $room=Room::with('category')->findOrFail($data['room_id']); abort_if($room->status!=='KOSONG'||$room->activeTenant()->exists(),422,'Kamar tidak tersedia.');
         DB::transaction(function()use($data,$room){Tenant::create($data+['active'=>true]);$room->update(['status'=>'TERISI']);});
-        return back()->with('success','Penghuni check-in; kamar otomatis terisi.');
+        return redirect()->route('dashboard',['tab'=>'tenants'])->with('success','Penghuni check-in; kamar otomatis terisi.');
     }
 
     public function tenantOut(Request $request, Tenant $tenant)
@@ -100,7 +106,7 @@ class KostController extends Controller
         abort_unless($tenant->active,422,'Penghuni sudah check-out.');
         $data=$request->validate(['move_out'=>['required','date','after_or_equal:'.$tenant->move_in->toDateString()]]);
         DB::transaction(function()use($tenant,$data){$tenant->update(['active'=>false,'move_out'=>$data['move_out']]);$tenant->room->update(['status'=>$tenant->room->maintenances()->where('status','!=','SELESAI')->exists()?'MAINTENANCE':'KOSONG']);});
-        return back()->with('success','Check-out tercatat; kamar kembali tersedia.');
+        return redirect()->route('dashboard',['tab'=>'tenants'])->with('success','Check-out tercatat; kamar kembali tersedia.');
     }
 
     public function updateTenant(Request $request, Tenant $tenant)
@@ -111,7 +117,7 @@ class KostController extends Controller
         if($tenant->active&&$roomChanged)abort_if($targetRoom->status!=='KOSONG'||$targetRoom->activeTenant()->exists(),422,'Kamar tujuan tidak tersedia. Pilih kamar kosong.');
         if($tenant->active)$data['move_out']=null;
         DB::transaction(function()use($tenant,$targetRoom,$roomChanged,$data){$oldRoom=$tenant->room;$tenant->update($data);if($tenant->active&&$roomChanged){$oldRoom->update(['status'=>$oldRoom->maintenances()->where('status','!=','SELESAI')->exists()?'MAINTENANCE':'KOSONG']);$targetRoom->update(['status'=>'TERISI']);}});
-        return back()->with('success','Data penghuni berhasil diperbarui.');
+        return redirect()->route('dashboard',['tab'=>'tenants'])->with('success','Data penghuni berhasil diperbarui.');
     }
 
     public function payment(Request $request)

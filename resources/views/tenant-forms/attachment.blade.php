@@ -18,5 +18,5 @@
     </section>
     @endif
     @if($form->validated_at)<div class="validation-proof">Divalidasi oleh {{ $form->validator?->name ?? 'Owner/Admin' }} pada {{ $form->validated_at->translatedFormat('d F Y, H:i') }}</div>@endif
-</main>
+</main><script src="{{ asset('assets/confirm-actions.js') }}?v=20260905-2"></script>
 </body></html>
