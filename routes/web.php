@@ -1,5 +1,7 @@
 <?php
-use App\Http\Controllers\{AuthController,DatabaseExportController,FinanceController,ImportController,KostController,UserController};use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\{AuthController,DatabaseExportController,FinanceController,ImportController,KostController,TenantDataFormController,UserController};use Illuminate\Support\Facades\Route;
+Route::get('/formpenghuni/{token}',[TenantDataFormController::class,'publicShow'])->middleware('throttle:60,1')->name('tenant-form.public');
+Route::post('/formpenghuni/{token}',[TenantDataFormController::class,'publicSubmit'])->middleware('throttle:5,1')->name('tenant-form.submit');
 Route::middleware('guest')->group(function(){Route::get('/login',[AuthController::class,'create'])->name('login');Route::post('/login',[AuthController::class,'store'])->middleware('throttle:6,1');});
 Route::middleware('auth')->group(function(){
  Route::get('/',[KostController::class,'index'])->name('dashboard');Route::post('/logout',[AuthController::class,'destroy'])->name('logout');
@@ -12,6 +14,8 @@ Route::middleware('auth')->group(function(){
  Route::post('/payments',[KostController::class,'payment'])->name('payments.store');Route::post('/expenses',[KostController::class,'expense'])->name('expenses.store');Route::patch('/expenses/{expense}',[KostController::class,'updateExpense'])->name('expenses.update');
  Route::post('/expense-categories',[KostController::class,'storeExpenseCategory'])->name('expense-categories.store');Route::patch('/expense-categories/{expenseCategory}',[KostController::class,'updateExpenseCategory'])->name('expense-categories.update');Route::delete('/expense-categories/{expenseCategory}',[KostController::class,'destroyExpenseCategory'])->name('expense-categories.destroy');
  Route::patch('/settings/whatsapp-template',[KostController::class,'updateWhatsAppTemplate'])->name('settings.whatsapp-template');
+ Route::patch('/settings/tenant-form-whatsapp-template',[TenantDataFormController::class,'updateTemplate'])->name('settings.tenant-form-whatsapp-template');
+ Route::get('/tenants/{tenant}/form',[TenantDataFormController::class,'attachment'])->name('tenant-form.attachment');Route::patch('/tenants/{tenant}/form/validate',[TenantDataFormController::class,'validateForm'])->name('tenant-form.validate');Route::patch('/tenants/{tenant}/form/revision',[TenantDataFormController::class,'requestRevision'])->name('tenant-form.revision');
  Route::post('/maintenances',[KostController::class,'maintenance'])->name('maintenances.store');
  Route::post('/users',[UserController::class,'store'])->name('users.store');Route::patch('/users/{user}',[UserController::class,'update'])->name('users.update');
 });
