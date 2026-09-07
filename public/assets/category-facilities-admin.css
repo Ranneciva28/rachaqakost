@@ -1,0 +1,37 @@
+.category-facilities-editor {
+    margin-top: 16px;
+    padding: 16px 0;
+    border-top: 1px solid var(--line);
+    border-bottom: 1px solid var(--line);
+}
+
+.category-facilities-editor .field {
+    margin-bottom: 10px;
+}
+
+.category-facilities-editor textarea {
+    min-height: 135px;
+    line-height: 1.65;
+}
+
+.category-facilities-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+}
+
+.category-photo-upload.form {
+    padding: 16px 0 0;
+}
+
+@media (max-width: 560px) {
+    .category-facilities-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+    .category-facilities-actions .btn {
+        width: 100%;
+        text-align: center;
+    }
+}

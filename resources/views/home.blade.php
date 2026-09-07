@@ -28,11 +28,14 @@
                     <div class="floor-quota">@foreach($floors as $floor)<span>Lantai {{ $floor }} <b>{{ $availableRooms->where('floor',$floor)->count() }}</b></span>@endforeach</div>
                 </div>
                 <div class="prices"><div><small>Harian</small><b>Rp {{ number_format($category->daily_price,0,',','.') }}</b></div><div><small>Mingguan</small><b>Rp {{ number_format($category->weekly_price,0,',','.') }}</b></div><div class="featured"><small>Bulanan</small><b>Rp {{ number_format($category->monthly_price,0,',','.') }}</b></div></div>
-                @if($availableCount===0)
-                    <div class="room-actions"><span class="full-label">Penuh</span><a class="waiting-button" href="{{ route('waiting-list.show',$category) }}">Isi Form Waiting List →</a></div>
-                @else
-                    <a class="interest" href="{{ $wa($category->name) }}" target="_blank" rel="noopener">Saya minat kategori {{ $category->name }} →</a>
-                @endif
+                <div class="room-actions {{ $availableCount===0?'is-full':'' }}">
+                    <a class="facility-button" href="{{ route('categories.facilities',$category) }}">Lihat Fasilitas</a>
+                    @if($availableCount===0)
+                        <a class="waiting-button" href="{{ route('waiting-list.show',$category) }}">Isi Waiting List →</a>
+                    @else
+                        <a class="interest" href="{{ $wa($category->name) }}" target="_blank" rel="noopener">Saya Minat →</a>
+                    @endif
+                </div>
             </div>
         </article>
     @empty<div class="empty-categories">Pilihan kamar sedang diperbarui. Hubungi Admin untuk informasi ketersediaan.</div>@endforelse
