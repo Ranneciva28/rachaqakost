@@ -4,6 +4,7 @@
     <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="robots" content="noindex,nofollow,noarchive"><meta name="referrer" content="no-referrer">
     <title>Formulir Data Penghuni — RachaqaKost</title>
+    @include('partials.branding-head')
     <link rel="stylesheet" href="{{ asset('assets/tenant-form.css') }}?v=20260905">
 </head>
 <body>
