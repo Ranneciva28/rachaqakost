@@ -24,10 +24,20 @@ class TenantDataFormController extends Controller
         $fields=TenantFormField::where('active',true)->whereHas('section',fn($q)=>$q->where('active',true))->orderBy('position')->get();
         [$rules,$attributes]=$this->rules($fields,$tenant->tenantForm);
         $validated=$request->validate($rules,[
+            'answers.*.required'=>'Kolom :attribute wajib diisi.',
+            'answers.*.email'=>'Format :attribute belum benar.',
+            'answers.*.date'=>'Format tanggal pada :attribute belum benar.',
+            'answers.*.before'=>'Tanggal :attribute harus sebelum hari ini.',
+            'answers.*.in'=>'Pilihan :attribute tidak tersedia.',
+            'answers.*.regex'=>'Format :attribute belum sesuai.',
+            'answers.*.max'=>'Isian :attribute terlalu panjang.',
+            'answers.phone.regex'=>'Nomor HP / WhatsApp harus berisi 9–30 karakter dan hanya menggunakan angka atau tanda nomor telepon.',
+            'answers.identity_number.regex'=>'Nomor identitas harus terdiri dari 12–20 angka.',
             'files.*.required'=>'Lampiran :attribute wajib diunggah.',
             'files.*.file'=>'Lampiran :attribute gagal diunggah. Silakan pilih ulang file.',
+            'files.*.uploaded'=>'KTP Melebihi Batas File untuk Upload 25MB, silahkan kompres terlebih dahulu',
             'files.*.mimes'=>'Lampiran :attribute harus berupa JPG, PNG, WEBP, atau PDF.',
-            'files.*.max'=>'Ukuran lampiran :attribute maksimal 15 MB. Pilih file yang lebih kecil.',
+            'files.*.max'=>'KTP Melebihi Batas File untuk Upload 25MB, silahkan kompres terlebih dahulu',
         ],$attributes);
         $answers=[];
         foreach($fields->where('type','!=','file') as $field)$answers[$field->key]=data_get($validated,'answers.'.$field->key);
@@ -121,7 +131,7 @@ class TenantDataFormController extends Controller
         $rules=[];$attributes=[];
         foreach($fields as $field){$name=($field->type==='file'?'files.':'answers.').$field->key;$attributes[$name]=$field->label;
             $required=$field->required;
-            if($field->type==='file'){$hasFile=$form?->uploads?->contains('tenant_form_field_id',$field->id);$rules[$name]=array_filter([$required&&!$hasFile?'required':'nullable','file','mimes:jpg,jpeg,png,webp,pdf','max:15360']);continue;}
+            if($field->type==='file'){$hasFile=$form?->uploads?->contains('tenant_form_field_id',$field->id);$rules[$name]=array_filter([$required&&!$hasFile?'required':'nullable','file','mimes:jpg,jpeg,png,webp,pdf','max:25600']);continue;}
             $base=[$required?'required':'nullable'];
             $typeRules=match($field->type){
                 'email'=>['email','max:150'],'phone'=>['string','max:30','regex:/^[0-9+() .-]{9,30}$/'],
