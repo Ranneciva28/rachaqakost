@@ -54,6 +54,12 @@ return new class extends Migration
             $table->index(['tenant_data_form_id', 'kind'], 'media_files_form_kind_idx');
         });
 
+        // Laravel's MySQL binary type is BLOB (64 KiB). Uploads are allowed up
+        // to 5 MiB, so MariaDB needs LONGBLOB while PostgreSQL keeps bytea.
+        if (DB::getDriverName() === 'mysql') {
+            DB::statement('ALTER TABLE media_files MODIFY contents LONGBLOB NOT NULL');
+        }
+
         $now = now();
         $sections = [
             ['title'=>'Identitas Penghuni','description'=>'Data identitas resmi dan kontak utama.','position'=>1,'active'=>true,'created_at'=>$now,'updated_at'=>$now],

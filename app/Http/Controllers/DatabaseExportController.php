@@ -11,9 +11,10 @@ class DatabaseExportController extends Controller
     public function __invoke(Request $request)
     {
         abort_unless($request->user()->isOwner(), 403);
-        abort_unless(config('database.default') === 'pgsql', 422, 'Export SQL hanya tersedia untuk database PostgreSQL.');
+        $driver = config('database.default');
+        abort_unless(in_array($driver, ['pgsql', 'mysql'], true), 422, 'Driver database tidak mendukung export SQL.');
 
-        $connection = $this->connectionSettings();
+        $connection = $this->connectionSettings($driver);
         $directory = storage_path('app/private/database-exports');
         if (! is_dir($directory) && ! mkdir($directory, 0700, true) && ! is_dir($directory)) {
             return back()->withErrors(['database_export'=>'Folder sementara export database tidak dapat dibuat.']);
@@ -25,26 +26,10 @@ class DatabaseExportController extends Controller
         }
 
         try {
-            $process = new Process([
-                '/usr/bin/pg_dump',
-                '--host='.$connection['host'],
-                '--port='.$connection['port'],
-                '--username='.$connection['username'],
-                '--dbname='.$connection['database'],
-                '--schema=public',
-                '--format=plain',
-                '--clean',
-                '--if-exists',
-                '--no-owner',
-                '--no-privileges',
-                '--quote-all-identifiers',
-                '--encoding=UTF8',
-                '--file='.$path,
-            ], base_path(), [
-                'PGPASSWORD'=>$connection['password'],
-                'PGSSLMODE'=>$connection['sslmode'],
-                'PGCONNECT_TIMEOUT'=>'15',
-            ], null, 300);
+            [$command, $environment] = $driver === 'pgsql'
+                ? $this->postgresDump($connection, $path)
+                : $this->mariaDbDump($connection, $path);
+            $process = new Process($command, base_path(), $environment, null, 300);
             $process->run();
 
             if (! $process->isSuccessful() || ! is_file($path) || filesize($path) === 0) {
@@ -76,16 +61,16 @@ class DatabaseExportController extends Controller
         }
     }
 
-    private function connectionSettings(): array
+    private function connectionSettings(string $driver): array
     {
-        $config = config('database.connections.pgsql');
+        $config = config('database.connections.'.$driver);
         $settings = [
             'host'=>(string) ($config['host'] ?? ''),
-            'port'=>(string) ($config['port'] ?? '5432'),
-            'database'=>(string) ($config['database'] ?? 'postgres'),
-            'username'=>(string) ($config['username'] ?? 'postgres'),
+            'port'=>(string) ($config['port'] ?? ($driver === 'pgsql' ? '5432' : '3306')),
+            'database'=>(string) ($config['database'] ?? ''),
+            'username'=>(string) ($config['username'] ?? ''),
             'password'=>(string) ($config['password'] ?? ''),
-            'sslmode'=>(string) ($config['sslmode'] ?? 'require'),
+            'sslmode'=>(string) ($config['sslmode'] ?? ($driver === 'pgsql' ? 'require' : 'preferred')),
         ];
 
         if ($url = trim((string) ($config['url'] ?? ''))) {
@@ -104,5 +89,50 @@ class DatabaseExportController extends Controller
         abort_if($settings['host'] === '' || $settings['database'] === '' || $settings['username'] === '', 500, 'Konfigurasi database belum lengkap.');
 
         return $settings;
+    }
+
+    private function postgresDump(array $connection, string $path): array
+    {
+        return [[
+            '/usr/bin/pg_dump',
+            '--host='.$connection['host'],
+            '--port='.$connection['port'],
+            '--username='.$connection['username'],
+            '--dbname='.$connection['database'],
+            '--schema=public',
+            '--format=plain',
+            '--clean',
+            '--if-exists',
+            '--no-owner',
+            '--no-privileges',
+            '--quote-all-identifiers',
+            '--encoding=UTF8',
+            '--file='.$path,
+        ], [
+            'PGPASSWORD'=>$connection['password'],
+            'PGSSLMODE'=>$connection['sslmode'],
+            'PGCONNECT_TIMEOUT'=>'15',
+        ]];
+    }
+
+    private function mariaDbDump(array $connection, string $path): array
+    {
+        $binary = is_executable('/usr/bin/mariadb-dump') ? '/usr/bin/mariadb-dump' : '/usr/bin/mysqldump';
+
+        return [[
+            $binary,
+            '--host='.$connection['host'],
+            '--port='.$connection['port'],
+            '--user='.$connection['username'],
+            '--single-transaction',
+            '--quick',
+            '--skip-lock-tables',
+            '--hex-blob',
+            '--default-character-set=utf8mb4',
+            '--result-file='.$path,
+            $connection['database'],
+        ], [
+            'MYSQL_PWD'=>$connection['password'],
+        ]];
     }
 }

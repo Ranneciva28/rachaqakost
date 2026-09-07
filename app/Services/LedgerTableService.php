@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\{Expense, ExpenseCategory, Payment};
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
 class LedgerTableService
@@ -49,13 +50,14 @@ class LedgerTableService
 
         if ($filters['search']) {
             $like = $this->like($filters['search']);
-            $query->where(function ($query) use ($like) {
-                $query->where('period', 'ilike', $like)
-                    ->orWhereHas('tenant', function ($tenant) use ($like) {
-                        $tenant->where('name', 'ilike', $like)
-                            ->orWhereHas('room', fn ($room) => $room->where('number', 'ilike', $like));
+            $operator = $this->likeOperator();
+            $query->where(function ($query) use ($like, $operator) {
+                $query->where('period', $operator, $like)
+                    ->orWhereHas('tenant', function ($tenant) use ($like, $operator) {
+                        $tenant->where('name', $operator, $like)
+                            ->orWhereHas('room', fn ($room) => $room->where('number', $operator, $like));
                     })
-                    ->orWhereHas('recorder', fn ($user) => $user->where('name', 'ilike', $like));
+                    ->orWhereHas('recorder', fn ($user) => $user->where('name', $operator, $like));
             });
         }
         $this->dateRange($query, 'paid_at', $filters['from'], $filters['to']);
@@ -82,11 +84,12 @@ class LedgerTableService
 
         if ($filters['search']) {
             $like = $this->like($filters['search']);
-            $query->where(function ($query) use ($like) {
-                $query->where('title', 'ilike', $like)
-                    ->orWhere('notes', 'ilike', $like)
-                    ->orWhere('category', 'ilike', $like)
-                    ->orWhereHas('recorder', fn ($user) => $user->where('name', 'ilike', $like));
+            $operator = $this->likeOperator();
+            $query->where(function ($query) use ($like, $operator) {
+                $query->where('title', $operator, $like)
+                    ->orWhere('notes', $operator, $like)
+                    ->orWhere('category', $operator, $like)
+                    ->orWhereHas('recorder', fn ($user) => $user->where('name', $operator, $like));
             });
         }
         $this->dateRange($query, 'spent_at', $filters['from'], $filters['to']);
@@ -154,5 +157,10 @@ class LedgerTableService
     private function like(string $value): string
     {
         return '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $value).'%';
+    }
+
+    private function likeOperator(): string
+    {
+        return DB::connection()->getDriverName() === 'pgsql' ? 'ilike' : 'like';
     }
 }
