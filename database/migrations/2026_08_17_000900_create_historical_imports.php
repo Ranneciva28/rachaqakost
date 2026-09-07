@@ -18,7 +18,7 @@ return new class extends Migration
             $table->unsignedInteger('valid_rows')->default(0);
             $table->unsignedInteger('imported_rows')->default(0);
             $table->text('error_message')->nullable();
-            $table->foreignId('uploaded_by')->constrained('users')->restrictOnDelete()->index();
+            $table->foreignId('uploaded_by')->index()->constrained('users')->restrictOnDelete();
             $table->timestamp('committed_at')->nullable();
             $table->timestamps();
         });
@@ -27,10 +27,10 @@ return new class extends Migration
             $table->boolean('is_historical')->default(false)->index();
             $table->date('coverage_start')->nullable()->index();
             $table->date('coverage_end')->nullable();
-            $table->foreignId('import_batch_id')->nullable()->constrained('import_batches')->nullOnDelete()->index();
+            $table->foreignId('import_batch_id')->nullable()->index()->constrained('import_batches')->nullOnDelete();
         });
         Schema::table('expenses', function (Blueprint $table) {
-            $table->foreignId('import_batch_id')->nullable()->constrained('import_batches')->nullOnDelete()->index();
+            $table->foreignId('import_batch_id')->nullable()->index()->constrained('import_batches')->nullOnDelete();
         });
 
         Schema::create('import_rows', function (Blueprint $table) {
