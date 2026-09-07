@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}"><title>Attachment Formulir — {{ $tenant->name }}</title><link rel="stylesheet" href="{{ asset('assets/tenant-form.css') }}?v=20260905-clear"></head>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="csrf-token" content="{{ csrf_token() }}"><title>Attachment Formulir — {{ $tenant->name }}</title>@include('partials.branding-head')<link rel="stylesheet" href="{{ asset('assets/tenant-form.css') }}?v=20260905-clear"></head>
 <body>
 <main class="public-form-shell attachment-shell">
     <div class="attachment-nav"><a href="{{ route('dashboard',['tab'=>'tenants']) }}">← Kembali ke Data Penghuni</a><button type="button" onclick="window.print()">Cetak / Simpan PDF</button></div>
