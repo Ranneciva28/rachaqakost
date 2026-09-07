@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="RachaqaKost — pilihan kamar kost harian, mingguan, dan bulanan."><title>RachaqaKost — Hunian Nyaman</title>@include('partials.branding-head')<link rel="stylesheet" href="{{ asset('assets/home.css') }}?v=20260907-waiting-list"><link rel="stylesheet" href="{{ asset('assets/home-waiting-list.css') }}?v=20260907"></head>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="RachaqaKost — pilihan kamar kost harian, mingguan, dan bulanan."><title>RachaqaKost — Hunian Nyaman</title>@include('partials.branding-head')<link rel="stylesheet" href="{{ asset('assets/home.css') }}?v=20260907-waiting-list"><link rel="stylesheet" href="{{ asset('assets/home-waiting-list.css') }}?v=20260907-facility-button"></head>
 <body>
 @php
     $waNumber=preg_replace('/\D+/','',$settings['site_admin_whatsapp']);if(str_starts_with($waNumber,'0'))$waNumber='62'.substr($waNumber,1);
@@ -29,7 +29,7 @@
                 </div>
                 <div class="prices"><div><small>Harian</small><b>Rp {{ number_format($category->daily_price,0,',','.') }}</b></div><div><small>Mingguan</small><b>Rp {{ number_format($category->weekly_price,0,',','.') }}</b></div><div class="featured"><small>Bulanan</small><b>Rp {{ number_format($category->monthly_price,0,',','.') }}</b></div></div>
                 <div class="room-actions {{ $availableCount===0?'is-full':'' }}">
-                    <a class="facility-button" href="{{ route('categories.facilities',$category) }}">Lihat Fasilitas</a>
+                    <a class="facility-button" href="{{ route('categories.facilities',$category) }}"><span class="facility-button-icon" aria-hidden="true">✦</span><span class="facility-button-label"><small>DETAIL KAMAR</small><b>Lihat Fasilitas</b></span><span class="facility-button-arrow" aria-hidden="true">→</span></a>
                     @if($availableCount===0)
                         <a class="waiting-button" href="{{ route('waiting-list.show',$category) }}">Isi Waiting List →</a>
                     @else
