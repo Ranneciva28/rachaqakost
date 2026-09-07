@@ -1,4 +1,24 @@
 document.addEventListener('DOMContentLoaded', () => {
+    const mobileNavigation = document.getElementById('mobileAdminNavigation');
+    const mobileNavigationBackdrop = document.querySelector('.mobile-nav-backdrop');
+    const mobileNavigationTrigger = document.querySelector('[data-mobile-nav-open]');
+    const setMobileNavigation = open => {
+        if (!mobileNavigation || !mobileNavigationBackdrop || !mobileNavigationTrigger) return;
+        mobileNavigation.classList.toggle('is-open', open);
+        mobileNavigationBackdrop.classList.toggle('is-open', open);
+        mobileNavigation.setAttribute('aria-hidden', open ? 'false' : 'true');
+        mobileNavigationTrigger.setAttribute('aria-expanded', open ? 'true' : 'false');
+        document.body.classList.toggle('mobile-navigation-open', open);
+        if (open) mobileNavigation.querySelector('.mobile-nav-close')?.focus();
+        else mobileNavigationTrigger.focus();
+    };
+    mobileNavigationTrigger?.addEventListener('click', () => setMobileNavigation(true));
+    document.querySelectorAll('[data-mobile-nav-close]').forEach(button => button.addEventListener('click', () => setMobileNavigation(false)));
+    mobileNavigation?.querySelectorAll('a').forEach(link => link.addEventListener('click', () => setMobileNavigation(false)));
+    document.addEventListener('keydown', event => {
+        if (event.key === 'Escape' && mobileNavigation?.classList.contains('is-open')) setMobileNavigation(false);
+    });
+
     document.querySelectorAll('[data-open]').forEach(button => {
         button.onclick = () => document.getElementById(button.dataset.open)?.showModal();
     });
