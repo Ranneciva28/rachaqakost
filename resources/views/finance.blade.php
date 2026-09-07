@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>RachaqaKost — Laporan Keuangan</title>
+    @include('partials.branding-head')
     <link rel="stylesheet" href="{{ asset('assets/rachaqakost.css') }}">
     <link rel="stylesheet" href="{{ asset('assets/rachaqakost-fixes.css') }}?v=20260905-finance-detail">
     <link rel="stylesheet" href="{{ asset('assets/finance-payment-detail.css') }}?v=20260905">
