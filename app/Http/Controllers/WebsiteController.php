@@ -67,6 +67,20 @@ class WebsiteController extends Controller
         return back()->with('success','Foto kategori '.$category->name.' ditambahkan.');
     }
 
+    public function updateCategoryFacilities(Request $request,RoomCategory $category)
+    {
+        $this->owner($request);
+        $data=$request->validate([
+            'facilities'=>['nullable','string','max:6000'],
+        ],[
+            'facilities.max'=>'Daftar fasilitas terlalu panjang. Maksimal 6.000 karakter.',
+        ]);
+        $facilities=collect(preg_split('/\r\n|\r|\n/',(string)($data['facilities']??'')))
+            ->map(fn($facility)=>trim($facility))->filter()->unique()->take(50)->values()->all();
+        $category->update(['facilities'=>$facilities]);
+        return back()->with('success','Fasilitas kategori '.$category->name.' diperbarui.');
+    }
+
     public function deleteMedia(Request $request,MediaFile $media)
     {
         $this->owner($request);abort_unless(in_array($media->kind,['HERO','CATEGORY'],true),404);$media->delete();

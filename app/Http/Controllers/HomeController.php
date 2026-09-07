@@ -13,4 +13,11 @@ class HomeController extends Controller
         $hero=MediaFile::metadata()->where('kind','HERO')->latest()->first();
         return view('home',compact('settings','categories','hero'));
     }
+
+    public function category(RoomCategory $category)
+    {
+        $settings=array_replace(WebsiteController::defaults(),AppSetting::whereIn('key',WebsiteController::SETTING_KEYS)->pluck('value','key')->all());
+        $category->load(['photos'=>fn($query)=>$query->metadata(),'rooms'=>fn($query)=>$query->orderBy('floor')->orderBy('number')]);
+        return view('category-facilities',compact('settings','category'));
+    }
 }
