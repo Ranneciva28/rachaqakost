@@ -22,7 +22,7 @@
             @elseif($field->type==='select')
                 <select name="answers[{{ $key }}]" @required($field->required) @disabled(!$editable)><option value="">Pilih</option>@foreach($field->options??[] as $option)<option value="{{ $option }}" @selected($value===$option)>{{ $option }}</option>@endforeach</select>
             @elseif($field->type==='file')
-                @if($editable)<input type="file" name="files[{{ $key }}]" accept="image/jpeg,image/png,image/webp,application/pdf" @required($field->required&&!$upload)>@endif
+                @if($editable)<input type="file" name="files[{{ $key }}]" accept="image/jpeg,image/png,image/webp,application/pdf" @required($field->required&&!$upload)><small>JPG, PNG, WEBP, atau PDF · maksimal 15 MB. Foto akan diperkecil otomatis tanpa memotong isi.</small>@endif
                 @if($upload)<span class="uploaded-file">✓ {{ $upload->original_name }} · {{ number_format($upload->size/1024,0,',','.') }} KB @if(($attachmentMode??false))<a href="{{ route('tenant-form.file',[$tenant,$upload]) }}" target="_blank" rel="noopener">Lihat file</a>@endif</span>@endif
             @else
                 <input type="{{ match($field->type){'email'=>'email','date'=>'date',default=>'text'} }}" name="answers[{{ $key }}]" value="{{ $value }}" maxlength="500" placeholder="{{ $field->placeholder }}" @if(in_array($field->type,['phone','number'],true)) inputmode="numeric" @endif @required($field->required) @readonly(!$editable)>

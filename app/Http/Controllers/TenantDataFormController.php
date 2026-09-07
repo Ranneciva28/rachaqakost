@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{AppSetting, MediaFile, Tenant, TenantDataForm, TenantFormField, TenantFormSection};
+use App\Services\TenantFormUploadService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
@@ -16,17 +17,22 @@ class TenantDataFormController extends Controller
             ->header('X-Robots-Tag','noindex, nofollow, noarchive')->header('Referrer-Policy','no-referrer');
     }
 
-    public function publicSubmit(Request $request,string $token)
+    public function publicSubmit(Request $request,string $token,TenantFormUploadService $uploadService)
     {
         $tenant=Tenant::with(['tenantForm.uploads'=>fn($q)=>$q->metadata()])->where('form_token',$token)->firstOrFail();
         abort_if($tenant->tenantForm&&$tenant->tenantForm->status!=='REVISION',423,'Formulir sudah dikunci. Hubungi pengelola RachaqaKost untuk membuka revisi.');
         $fields=TenantFormField::where('active',true)->whereHas('section',fn($q)=>$q->where('active',true))->orderBy('position')->get();
         [$rules,$attributes]=$this->rules($fields,$tenant->tenantForm);
-        $validated=$request->validate($rules,[],$attributes);
+        $validated=$request->validate($rules,[
+            'files.*.required'=>'Lampiran :attribute wajib diunggah.',
+            'files.*.file'=>'Lampiran :attribute gagal diunggah. Silakan pilih ulang file.',
+            'files.*.mimes'=>'Lampiran :attribute harus berupa JPG, PNG, WEBP, atau PDF.',
+            'files.*.max'=>'Ukuran lampiran :attribute maksimal 15 MB. Pilih file yang lebih kecil.',
+        ],$attributes);
         $answers=[];
         foreach($fields->where('type','!=','file') as $field)$answers[$field->key]=data_get($validated,'answers.'.$field->key);
 
-        DB::transaction(function()use($tenant,$fields,$answers,$validated){
+        DB::transaction(function()use($tenant,$fields,$answers,$validated,$uploadService){
             $answers=array_replace($tenant->tenantForm?->responses??[],$answers);
             $form=$tenant->tenantForm()->updateOrCreate([], $this->legacyValues($tenant,$answers)+[
                 'responses'=>$answers,'status'=>'PENDING_APPROVAL','submitted_at'=>now(),
@@ -35,14 +41,8 @@ class TenantDataFormController extends Controller
             foreach($fields->where('type','file') as $field){
                 $file=data_get($validated,'files.'.$field->key);if(!$file)continue;
                 $form->uploads()->where('tenant_form_field_id',$field->id)->delete();
-                $stream=fopen($file->getRealPath(),'rb');
-                throw_if($stream===false,\RuntimeException::class,'File upload tidak dapat dibaca.');
-                try{
-                    $form->uploads()->create(['kind'=>'KTP','tenant_form_field_id'=>$field->id,'original_name'=>$file->getClientOriginalName(),
-                        'mime_type'=>$file->getMimeType()?:'application/octet-stream','size'=>$file->getSize(),'contents'=>$stream,'position'=>0]);
-                }finally{
-                    fclose($stream);
-                }
+                $prepared=$uploadService->prepare($file);
+                $form->uploads()->create(['kind'=>'KTP','tenant_form_field_id'=>$field->id]+$prepared+['position'=>0]);
             }
         });
         return redirect()->route('tenant-form.public',$tenant->form_token)->with('success','Formulir berhasil dikirim dan sedang menunggu validasi pengelola.');
@@ -121,7 +121,7 @@ class TenantDataFormController extends Controller
         $rules=[];$attributes=[];
         foreach($fields as $field){$name=($field->type==='file'?'files.':'answers.').$field->key;$attributes[$name]=$field->label;
             $required=$field->required;
-            if($field->type==='file'){$hasFile=$form?->uploads?->contains('tenant_form_field_id',$field->id);$rules[$name]=array_filter([$required&&!$hasFile?'required':'nullable','file','mimes:jpg,jpeg,png,webp,pdf','max:5120']);continue;}
+            if($field->type==='file'){$hasFile=$form?->uploads?->contains('tenant_form_field_id',$field->id);$rules[$name]=array_filter([$required&&!$hasFile?'required':'nullable','file','mimes:jpg,jpeg,png,webp,pdf','max:15360']);continue;}
             $base=[$required?'required':'nullable'];
             $typeRules=match($field->type){
                 'email'=>['email','max:150'],'phone'=>['string','max:30','regex:/^[0-9+() .-]{9,30}$/'],
