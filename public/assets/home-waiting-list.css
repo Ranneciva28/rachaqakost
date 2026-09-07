@@ -10,4 +10,4 @@
 
 @media(prefers-reduced-motion:reduce){.room-actions a{transition:none}}
 
-.room-card .room-gallery{display:block;height:320px;overflow:hidden;background:#e6ebe6}.room-card .room-cover{display:block;width:100%;height:100%;object-fit:cover;object-position:center}.room-card .room-empty{width:100%;height:100%}@media(max-width:760px){.room-card .room-gallery{height:270px}}
+.room-card .room-gallery{display:block;height:320px;overflow:hidden;background:#eef1ec}.room-card .room-cover{display:block;width:100%;height:100%;padding:10px;object-fit:contain;object-position:center}.room-card .room-empty{width:100%;height:100%}@media(max-width:760px){.room-card .room-gallery{height:270px}.room-card .room-cover{padding:7px}}
