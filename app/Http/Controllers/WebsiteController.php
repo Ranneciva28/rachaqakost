@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\{AppSetting, MediaFile, RoomCategory};
+use App\Services\BrandImageService;
 use Illuminate\Http\Request;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
@@ -30,6 +31,32 @@ class WebsiteController extends Controller
         $this->owner($request);$data=$request->validate(['photo'=>['required','image','mimes:jpg,jpeg,png,webp','max:5120']]);$file=$data['photo'];
         DB::transaction(function()use($file){MediaFile::where('kind','HERO')->delete();$this->createMedia($file,['kind'=>'HERO']);});
         return back()->with('success','Foto utama homepage diperbarui.');
+    }
+
+    public function uploadLogo(Request $request, BrandImageService $images)
+    {
+        $this->owner($request);
+        $data = $request->validate([
+            'logo' => ['required', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120', 'dimensions:min_width=64,min_height=64,max_width=4096,max_height=4096'],
+        ]);
+        $variants = $images->variants($data['logo']);
+
+        DB::transaction(function () use ($variants) {
+            MediaFile::whereIn('kind', ['LOGO', 'FAVICON'])->delete();
+            foreach ($variants as $variant) {
+                MediaFile::create($variant);
+            }
+        });
+
+        return back()->with('success', 'Logo diperbarui. Versi antarmuka dan favicon sudah disesuaikan otomatis.');
+    }
+
+    public function deleteLogo(Request $request)
+    {
+        $this->owner($request);
+        MediaFile::whereIn('kind', ['LOGO', 'FAVICON'])->delete();
+
+        return back()->with('success', 'Logo dihapus dan tampilan kembali memakai logo bawaan.');
     }
 
     public function uploadCategoryPhotos(Request $request,RoomCategory $category)
