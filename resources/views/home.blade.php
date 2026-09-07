@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="RachaqaKost — pilihan kamar kost harian, mingguan, dan bulanan."><title>RachaqaKost — Hunian Nyaman</title>@include('partials.branding-head')<link rel="stylesheet" href="{{ asset('assets/home.css') }}?v=20260907-thumbnail"><link rel="stylesheet" href="{{ asset('assets/home-waiting-list.css') }}?v=20260907-thumbnail"></head>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="RachaqaKost — pilihan kamar kost harian, mingguan, dan bulanan."><title>RachaqaKost — Hunian Nyaman</title>@include('partials.branding-head')<link rel="stylesheet" href="{{ asset('assets/home.css') }}?v=20260907-thumbnail"><link rel="stylesheet" href="{{ asset('assets/home-waiting-list.css') }}?v=20260907-thumbnail-fit"></head>
 <body>
 @php
     $waNumber=preg_replace('/\D+/','',$settings['site_admin_whatsapp']);if(str_starts_with($waNumber,'0'))$waNumber='62'.substr($waNumber,1);

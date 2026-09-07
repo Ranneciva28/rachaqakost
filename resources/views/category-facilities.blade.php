@@ -7,7 +7,7 @@
     <title>Fasilitas {{ $category->name }} — RachaqaKost</title>
     @include('partials.branding-head')
     <link rel="stylesheet" href="{{ asset('assets/category-facilities.css') }}?v=20260907-gallery">
-    <link rel="stylesheet" href="{{ asset('assets/category-gallery.css') }}?v=20260907">
+    <link rel="stylesheet" href="{{ asset('assets/category-gallery.css') }}?v=20260907-contain">
 </head>
 <body>
 @php

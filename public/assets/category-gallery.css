@@ -6,7 +6,7 @@
     overflow: hidden;
     border: 0;
     border-radius: 17px;
-    background: #dfe6e1;
+    background: #eef1ec;
     cursor: zoom-in;
 }
 
@@ -21,7 +21,8 @@
     width: 100%;
     height: 100%;
     border-radius: 0;
-    object-fit: cover;
+    padding: 8px;
+    object-fit: contain;
     object-position: center;
     transition: transform .25s ease;
 }
@@ -43,7 +44,7 @@
 }
 
 .detail-gallery-item:hover img {
-    transform: scale(1.025);
+    transform: scale(1.012);
 }
 
 .detail-gallery-item:hover > span,
@@ -153,6 +154,11 @@
 
     .detail-gallery-item > span {
         opacity: 1;
+    }
+
+    .detail-gallery-item img,
+    .detail-gallery .detail-gallery-item.detail-cover img {
+        padding: 5px;
     }
 
     .photo-lightbox {

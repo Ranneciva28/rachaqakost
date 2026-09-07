@@ -5,11 +5,20 @@
     border-bottom: 1px solid var(--line);
 }
 
+.website-thumbs {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+}
+
 .website-thumbs .website-thumb {
+    display: flex;
+    min-width: 0;
     overflow: hidden;
+    flex-direction: column;
     border: 2px solid transparent;
-    border-radius: 12px;
-    background: #edf1ed;
+    border-radius: 14px;
+    background: #fff;
+    box-shadow: 0 7px 20px rgba(18, 40, 35, .08);
 }
 
 .website-thumbs .website-thumb.is-thumbnail {
@@ -18,37 +27,54 @@
 }
 
 .website-thumbs .website-thumb img {
-    border-radius: 9px;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    padding: 6px;
+    border-radius: 12px 12px 0 0;
+    background: #eef1ec;
+    object-fit: contain;
+    object-position: center;
 }
 
 .website-thumbs .thumbnail-badge {
-    position: absolute;
-    bottom: 5px;
-    left: 5px;
-    padding: 5px 7px;
-    border-radius: 999px;
-    background: var(--green);
-    color: #fff;
-    font-size: 7px;
-    font-weight: 900;
+    position: static;
+    display: block;
+    margin: 8px;
+    padding: 9px 8px;
+    border-radius: 9px;
+    background: #dff0e9;
+    color: var(--green);
+    text-align: center;
+    font-size: 8px;
+    font-weight: 950;
 }
 
 .website-thumbs form.thumbnail-select-form {
-    position: absolute;
-    right: 5px;
-    bottom: 5px;
-    left: 5px;
-    top: auto;
+    position: static;
+    margin: 8px;
 }
 
 .website-thumbs .thumbnail-select-form button {
+    display: flex;
+    align-items: center;
+    justify-content: center;
     width: 100%;
-    height: auto;
-    padding: 6px 5px;
-    border-radius: 8px;
-    background: rgba(23, 61, 55, .92);
-    font-size: 7px;
-    font-weight: 850;
+    min-height: 38px;
+    padding: 7px 9px;
+    border: 1px solid #174d43;
+    border-radius: 9px;
+    background: #174d43;
+    color: #fff;
+    font-size: 10px;
+    font-weight: 900;
+    line-height: 1.15;
+    text-align: center;
+    transition: background .18s ease, transform .18s ease;
+}
+
+.website-thumbs .thumbnail-select-form button:hover {
+    background: #217b69;
+    transform: translateY(-1px);
 }
 
 .website-thumbs form.thumbnail-delete-form {
@@ -83,6 +109,10 @@
 }
 
 @media (max-width: 560px) {
+    .website-thumbs {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
     .category-facilities-actions {
         align-items: stretch;
         flex-direction: column;
