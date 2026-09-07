@@ -8,7 +8,7 @@ class MediaController extends Controller
 {
     public function show(MediaFile $media)
     {
-        abort_unless(in_array($media->kind,['HERO','CATEGORY'],true),404);
+        abort_unless(in_array($media->kind,['HERO','CATEGORY','LOGO','FAVICON'],true),404);
         return $this->stream($media,['Content-Type'=>$media->mime_type,'Content-Length'=>(string)$media->size,
             'X-Content-Type-Options'=>'nosniff','Cache-Control'=>'public, max-age=604800, immutable']);
     }
