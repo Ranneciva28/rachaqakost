@@ -2,7 +2,7 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\{AppSetting, Expense, ExpenseCategory, Maintenance, MediaFile, Payment, Room, RoomCategory, Tenant, TenantDataForm, TenantFormSection, User};
+use App\Models\{AppSetting, Expense, ExpenseCategory, Maintenance, MediaFile, Payment, Room, RoomCategory, Tenant, TenantDataForm, TenantFormSection, User, WaitingListEntry, WaitingListField};
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -26,7 +26,7 @@ class KostController extends Controller
         $income = (float) (clone $incomeQuery)->sum('amount');
         $expenseTotal = (float) (clone $expenseQuery)->sum('amount');
         $activeTab = $request->string('tab')->value() ?: 'dashboard';
-        $allowed = ['dashboard','rooms','tenants','form-drafts','form-builder','payments','expenses','maintenance','website','users'];
+        $allowed = ['dashboard','rooms','tenants','form-drafts','form-builder','waiting-list','payments','expenses','maintenance','website','users'];
         $ownerTabs=['form-builder','website','users'];
         if (!in_array($activeTab, $allowed, true) || (in_array($activeTab,$ownerTabs,true) && !$request->user()->isOwner())) $activeTab = 'dashboard';
         $paymentFilters=$ledger->paymentFilters($request);
@@ -34,9 +34,21 @@ class KostController extends Controller
         $payments=collect();$expenses=collect();$paymentFilteredTotal=0.0;$expenseFilteredTotal=0.0;
         if($activeTab==='payments')[$payments,$paymentFilteredTotal]=$ledger->payments($paymentFilters);
         if($activeTab==='expenses')[$expenses,$expenseFilteredTotal]=$ledger->expenses($expenseFilters);
+        $waitingStatus=$request->string('waiting_status')->value()?:'ACTIVE';
+        $waitingFrom=$request->string('waiting_from')->value();$waitingTo=$request->string('waiting_to')->value();
+        $waitingEntries=collect();$waitingCounts=collect();
+        if($activeTab==='waiting-list'){
+            $waitingQuery=WaitingListEntry::with(['category','followupUser','archiveUser'])->latest('submitted_at');
+            if(in_array($waitingStatus,['NEW','FOLLOWED_UP','ARCHIVED'],true))$waitingQuery->where('status',$waitingStatus);
+            elseif($waitingStatus==='ACTIVE')$waitingQuery->whereIn('status',['NEW','FOLLOWED_UP']);
+            if(Carbon::hasFormat($waitingFrom,'Y-m-d'))$waitingQuery->whereDate('submitted_at','>=',$waitingFrom);
+            if(Carbon::hasFormat($waitingTo,'Y-m-d'))$waitingQuery->whereDate('submitted_at','<=',$waitingTo);
+            $waitingEntries=$waitingQuery->paginate(25)->withQueryString();
+            $waitingCounts=WaitingListEntry::selectRaw('status, COUNT(*) total')->groupBy('status')->pluck('total','status');
+        }
 
         return view('dashboard', [
-            'activeTab'=>$activeTab, 'rooms'=>$rooms, 'categories'=>RoomCategory::with(['photos'=>fn($q)=>$q->metadata()])->withCount('rooms')->orderBy('name')->get(),
+            'activeTab'=>$activeTab, 'rooms'=>$rooms, 'categories'=>RoomCategory::with(['photos'=>fn($q)=>$q->metadata()])->withCount(['rooms','rooms as available_rooms_count'=>fn($q)=>$q->where('status','KOSONG')])->orderBy('name')->get(),
             'tenants'=>$tenants, 'tenantHistory'=>Tenant::with(['room.category','tenantForm'])->where('active',false)->latest('move_out')->limit(40)->get(),
             'tenantFormDrafts'=>TenantDataForm::with('tenant.room')->where('status','PENDING_APPROVAL')->latest('submitted_at')->get(),
             'formSections'=>TenantFormSection::with('fields')->orderBy('position')->orderBy('id')->get(),
@@ -56,6 +68,9 @@ class KostController extends Controller
             'users'=>$request->user()->isOwner()?User::orderBy('name')->get():collect(),
             'whatsappTemplate'=>AppSetting::where('key','whatsapp_payment_template')->value('value') ?: self::DEFAULT_WHATSAPP_TEMPLATE,
             'tenantFormWhatsAppTemplate'=>AppSetting::where('key','tenant_form_whatsapp_template')->value('value') ?: self::DEFAULT_TENANT_FORM_WHATSAPP_TEMPLATE,
+            'waitingEntries'=>$waitingEntries,'waitingCounts'=>$waitingCounts,'waitingStatus'=>$waitingStatus,'waitingFrom'=>$waitingFrom,'waitingTo'=>$waitingTo,
+            'waitingListFields'=>WaitingListField::orderBy('position')->orderBy('id')->get(),
+            'waitingListWhatsAppTemplate'=>AppSetting::where('key','waiting_list_whatsapp_template')->value('value') ?: WaitingListController::DEFAULT_WHATSAPP_TEMPLATE,
         ]);
     }
 

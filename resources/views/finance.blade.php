@@ -9,10 +9,11 @@
     <link rel="stylesheet" href="{{ asset('assets/rachaqakost.css') }}">
     <link rel="stylesheet" href="{{ asset('assets/rachaqakost-fixes.css') }}?v=20260905-finance-detail">
     <link rel="stylesheet" href="{{ asset('assets/finance-payment-detail.css') }}?v=20260905">
+    <link rel="stylesheet" href="{{ asset('assets/dashboard-waiting-list.css') }}?v=20260907">
 </head>
 <body>
 @php
-$tabs=['dashboard'=>['⌂','Ringkasan'],'rooms'=>['▦','Kamar'],'tenants'=>['◎','Penghuni'],'payments'=>['↗','Pembayaran'],'expenses'=>['↘','Pengeluaran'],'maintenance'=>['◇','Maintenance'],'users'=>['♙','Tim']];
+$activeTab='finance';
 $periodLabel=$from->translatedFormat('d M Y').' – '.$to->translatedFormat('d M Y');
 $comparisonText=function($value,$inverse=false){
     if($value===null)return 'Belum ada pembanding';
@@ -22,18 +23,7 @@ $comparisonText=function($value,$inverse=false){
 };
 @endphp
 <div class="shell finance-shell">
-    <aside class="sidebar">
-        <div class="brand"><span class="brandmark">K</span><div><b>RachaqaKost</b><small>Operational OS</small></div></div>
-        <nav class="nav">
-            @foreach($tabs as $key=>$tab)
-                <a href="{{ route('dashboard',['tab'=>$key]) }}"><span class="ico">{{ $tab[0] }}</span>{{ $tab[1] }}</a>
-            @endforeach
-            <div class="nav-separator"></div>
-            <a href="{{ route('finance') }}" class="active"><span class="ico">Rp</span>Keuangan</a>
-            <a href="{{ route('imports.index') }}"><span class="ico">⇧</span>Import Data</a>
-        </nav>
-        <div class="profile"><b>{{ auth()->user()->name }}</b><small>Owner / Admin</small><form method="post" action="{{ route('logout') }}">@csrf<button class="logout">Keluar dari workspace</button></form></div>
-    </aside>
+    @include('partials.admin-navigation')
 
     <main class="main finance-main">
         <header class="top finance-top">
@@ -154,13 +144,6 @@ $comparisonText=function($value,$inverse=false){
         <aside class="finance-note"><b>Catatan pembacaan laporan</b><p>Gross profit = pendapatan dikurangi kategori biaya langsung. Net profit = pendapatan dikurangi seluruh pengeluaran. Fixed cost adalah biaya yang tetap muncul secara berkala, sedangkan variable cost berubah mengikuti aktivitas usaha. Klasifikasi ini tidak dihitung dari okupansi. Laporan ini berbasis kas, bukan laporan akuntansi akrual atau laporan pajak.</p><span>Periode pembanding: {{ $previousFrom->translatedFormat('d M Y') }} – {{ $previousTo->translatedFormat('d M Y') }}</span></aside>
     </main>
 
-    <nav class="mobile">
-        <a href="{{ route('dashboard') }}"><b>⌂</b>Ringkasan</a>
-        <a href="{{ route('dashboard',['tab'=>'payments']) }}"><b>↗</b>Pembayaran</a>
-        <a href="{{ route('dashboard',['tab'=>'expenses']) }}"><b>↘</b>Pengeluaran</a>
-        <a href="{{ route('finance') }}" class="active"><b>Rp</b>Keuangan</a>
-        <a href="{{ route('imports.index') }}"><b>⇧</b>Import</a>
-    </nav>
 </div>
 <script src="{{ asset('assets/rachaqakost.js') }}?v=20260817-import"></script>
 </body>
