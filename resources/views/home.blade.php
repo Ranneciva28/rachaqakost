@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="RachaqaKost — pilihan kamar kost harian, mingguan, dan bulanan."><title>RachaqaKost — Hunian Nyaman</title>@include('partials.branding-head')<link rel="stylesheet" href="{{ asset('assets/home.css') }}?v=20260907-waiting-list"><link rel="stylesheet" href="{{ asset('assets/home-waiting-list.css') }}?v=20260907-facility-button"></head>
+<html lang="id"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="description" content="RachaqaKost — pilihan kamar kost harian, mingguan, dan bulanan."><title>RachaqaKost — Hunian Nyaman</title>@include('partials.branding-head')<link rel="stylesheet" href="{{ asset('assets/home.css') }}?v=20260907-thumbnail"><link rel="stylesheet" href="{{ asset('assets/home-waiting-list.css') }}?v=20260907-thumbnail"></head>
 <body>
 @php
     $waNumber=preg_replace('/\D+/','',$settings['site_admin_whatsapp']);if(str_starts_with($waNumber,'0'))$waNumber='62'.substr($waNumber,1);
@@ -20,7 +20,7 @@
             $floors=collect([1,2])->merge($category->rooms->pluck('floor'))->unique()->sort()->values();
         @endphp
         <article class="room-card">
-            <div class="room-gallery">@if($category->photos->isNotEmpty())<img class="room-cover" src="{{ route('media.public',$category->photos->first()) }}" alt="Kamar {{ $category->name }}"><div class="room-thumbs">@foreach($category->photos->slice(1,3) as $photo)<img src="{{ route('media.public',$photo) }}" alt="Detail kamar {{ $category->name }}">@endforeach @if($category->photos->count()>4)<span>+{{ $category->photos->count()-4 }}</span>@endif</div>@else<div class="room-empty"><span>K</span><small>Foto {{ $category->name }} segera hadir</small></div>@endif</div>
+            <div class="room-gallery">@if($category->thumbnail)<img class="room-cover" src="{{ route('media.public',$category->thumbnail) }}" alt="Thumbnail kamar {{ $category->name }}" loading="lazy">@else<div class="room-empty"><span>K</span><small>Foto {{ $category->name }} segera hadir</small></div>@endif</div>
             <div class="room-copy">
                 <div class="room-head"><div><small>KATEGORI</small><h3>{{ $category->name }}</h3></div><span>{{ $category->rooms_count }} kamar</span></div>
                 <div class="availability {{ $availableCount===0?'is-full':'' }}">

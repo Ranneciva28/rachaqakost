@@ -6,7 +6,8 @@
     <meta name="description" content="Fasilitas dan ketersediaan kamar kategori {{ $category->name }} di RachaqaKost.">
     <title>Fasilitas {{ $category->name }} — RachaqaKost</title>
     @include('partials.branding-head')
-    <link rel="stylesheet" href="{{ asset('assets/category-facilities.css') }}?v=20260907">
+    <link rel="stylesheet" href="{{ asset('assets/category-facilities.css') }}?v=20260907-gallery">
+    <link rel="stylesheet" href="{{ asset('assets/category-gallery.css') }}?v=20260907">
 </head>
 <body>
 @php
@@ -32,8 +33,7 @@
     <section class="detail-layout">
         <div class="detail-gallery">
             @if($category->photos->isNotEmpty())
-                <img class="detail-cover" src="{{ route('media.public',$category->photos->first()) }}" alt="Kamar {{ $category->name }}">
-                @foreach($category->photos->slice(1) as $photo)<img src="{{ route('media.public',$photo) }}" alt="Detail fasilitas kamar {{ $category->name }}">@endforeach
+                @foreach($category->photos as $photo)<button type="button" class="detail-gallery-item {{ $loop->first?'detail-cover':'' }}" data-gallery-index="{{ $loop->index }}" data-gallery-src="{{ route('media.public',$photo) }}" data-gallery-alt="Foto {{ $loop->iteration }} kategori {{ $category->name }}"><img src="{{ route('media.public',$photo) }}" alt="Foto {{ $loop->iteration }} kategori {{ $category->name }}" loading="lazy"><span>Lihat foto</span></button>@endforeach
             @else
                 <div class="detail-photo-empty"><span>K</span><b>Foto {{ $category->name }} segera hadir</b><small>Hubungi Admin untuk meminta foto terbaru.</small></div>
             @endif
@@ -56,5 +56,14 @@
 </main>
 
 <footer><a class="detail-brand" href="{{ route('home') }}"><span>@if($brandLogo)<img src="{{ route('media.public',$brandLogo) }}" alt="Logo RachaqaKost">@else K @endif</span><div><b>RachaqaKost</b><small>Hunian nyaman, pengelolaan terpercaya.</small></div></a></footer>
+@if($category->photos->isNotEmpty())
+<dialog class="photo-lightbox" id="categoryPhotoLightbox" aria-label="Galeri foto {{ $category->name }}">
+    <button type="button" class="lightbox-close" data-lightbox-close aria-label="Tutup galeri">×</button>
+    <button type="button" class="lightbox-nav lightbox-prev" data-lightbox-prev aria-label="Foto sebelumnya">←</button>
+    <figure><img src="" alt=""><figcaption><span id="lightboxCaption"></span><b id="lightboxCounter"></b></figcaption></figure>
+    <button type="button" class="lightbox-nav lightbox-next" data-lightbox-next aria-label="Foto berikutnya">→</button>
+</dialog>
+<script src="{{ asset('assets/category-facilities.js') }}?v=20260907"></script>
+@endif
 </body>
 </html>

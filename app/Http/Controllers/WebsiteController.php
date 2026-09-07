@@ -63,8 +63,17 @@ class WebsiteController extends Controller
     {
         $this->owner($request);$data=$request->validate(['photos'=>['required','array','max:8'],'photos.*'=>['required','image','mimes:jpg,jpeg,png,webp','max:5120']]);
         $existing=$category->photos()->count();abort_if($existing+count($data['photos'])>8,422,'Maksimal 8 foto untuk setiap kategori kamar.');
-        DB::transaction(function()use($category,$data,$existing){foreach($data['photos'] as $offset=>$file)$this->createMedia($file,['kind'=>'CATEGORY','room_category_id'=>$category->id,'position'=>$existing+$offset+1]);});
+        $hasThumbnail=$category->photos()->where('is_thumbnail',true)->exists();
+        DB::transaction(function()use($category,$data,$existing,$hasThumbnail){foreach($data['photos'] as $offset=>$file)$this->createMedia($file,['kind'=>'CATEGORY','room_category_id'=>$category->id,'position'=>$existing+$offset+1,'is_thumbnail'=>!$hasThumbnail&&$offset===0]);});
         return back()->with('success','Foto kategori '.$category->name.' ditambahkan.');
+    }
+
+    public function setCategoryThumbnail(Request $request,RoomCategory $category,MediaFile $media)
+    {
+        $this->owner($request);
+        abort_unless($media->kind==='CATEGORY'&&(int)$media->room_category_id===(int)$category->id,404);
+        DB::transaction(function()use($category,$media){$category->photos()->update(['is_thumbnail'=>false]);$media->update(['is_thumbnail'=>true]);});
+        return back()->with('success',$media->original_name.' dijadikan thumbnail kategori '.$category->name.'.');
     }
 
     public function updateCategoryFacilities(Request $request,RoomCategory $category)
@@ -83,7 +92,8 @@ class WebsiteController extends Controller
 
     public function deleteMedia(Request $request,MediaFile $media)
     {
-        $this->owner($request);abort_unless(in_array($media->kind,['HERO','CATEGORY'],true),404);$media->delete();
+        $this->owner($request);abort_unless(in_array($media->kind,['HERO','CATEGORY'],true),404);
+        DB::transaction(function()use($media){$wasThumbnail=$media->kind==='CATEGORY'&&$media->is_thumbnail;$categoryId=$media->room_category_id;$media->delete();if($wasThumbnail&&$categoryId)MediaFile::where('kind','CATEGORY')->where('room_category_id',$categoryId)->orderBy('position')->orderBy('id')->first()?->update(['is_thumbnail'=>true]);});
         return back()->with('success','Foto dihapus dari homepage.');
     }
 
