@@ -5,6 +5,64 @@
     border-bottom: 1px solid var(--line);
 }
 
+.website-thumbs .website-thumb {
+    overflow: hidden;
+    border: 2px solid transparent;
+    border-radius: 12px;
+    background: #edf1ed;
+}
+
+.website-thumbs .website-thumb.is-thumbnail {
+    border-color: var(--green);
+    box-shadow: 0 0 0 3px rgba(30, 107, 93, .12);
+}
+
+.website-thumbs .website-thumb img {
+    border-radius: 9px;
+}
+
+.website-thumbs .thumbnail-badge {
+    position: absolute;
+    bottom: 5px;
+    left: 5px;
+    padding: 5px 7px;
+    border-radius: 999px;
+    background: var(--green);
+    color: #fff;
+    font-size: 7px;
+    font-weight: 900;
+}
+
+.website-thumbs form.thumbnail-select-form {
+    position: absolute;
+    right: 5px;
+    bottom: 5px;
+    left: 5px;
+    top: auto;
+}
+
+.website-thumbs .thumbnail-select-form button {
+    width: 100%;
+    height: auto;
+    padding: 6px 5px;
+    border-radius: 8px;
+    background: rgba(23, 61, 55, .92);
+    font-size: 7px;
+    font-weight: 850;
+}
+
+.website-thumbs form.thumbnail-delete-form {
+    top: 4px;
+    right: 4px;
+}
+
+.thumbnail-editor-help {
+    display: block;
+    margin-top: 9px;
+    color: var(--muted);
+    font-size: 9px;
+}
+
 .category-facilities-editor .field {
     margin-bottom: 10px;
 }

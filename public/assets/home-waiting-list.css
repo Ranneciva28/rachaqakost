@@ -9,3 +9,5 @@
 @media(max-width:560px){.availability{align-items:flex-start;flex-direction:column}.floor-quota{justify-content:flex-start}.room-actions{grid-template-columns:1fr}.room-actions a{width:100%}.facility-button-label b{font-size:12px}}
 
 @media(prefers-reduced-motion:reduce){.room-actions a{transition:none}}
+
+.room-card .room-gallery{display:block;height:320px;overflow:hidden;background:#e6ebe6}.room-card .room-cover{display:block;width:100%;height:100%;object-fit:cover;object-position:center}.room-card .room-empty{width:100%;height:100%}@media(max-width:760px){.room-card .room-gallery{height:270px}}
