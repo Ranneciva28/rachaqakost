@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="{{ asset('assets/rachaqakost-fixes.css') }}?v=20260905-finance-detail">
     <link rel="stylesheet" href="{{ asset('assets/finance-payment-detail.css') }}?v=20260905">
     <link rel="stylesheet" href="{{ asset('assets/dashboard-waiting-list.css') }}?v=20260907">
+    <link rel="stylesheet" href="{{ asset('assets/mobile-admin-navigation.css') }}?v=20260907">
 </head>
 <body>
 @php
@@ -145,6 +146,6 @@ $comparisonText=function($value,$inverse=false){
     </main>
 
 </div>
-<script src="{{ asset('assets/rachaqakost.js') }}?v=20260817-import"></script>
+<script src="{{ asset('assets/rachaqakost.js') }}?v=20260907-mobile-nav"></script>
 </body>
 </html>
