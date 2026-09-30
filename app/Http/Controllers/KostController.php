@@ -184,6 +184,87 @@ class KostController extends Controller
         return back()->with('success',$data['payment_mode']==='HISTORICAL'?'Pembayaran historis tersimpan tanpa mengubah jatuh tempo.':'Pembayaran tersimpan; masa sewa dan jatuh tempo otomatis diperbarui.');
     }
 
+
+    public function updatePayment(Request $request,Payment $payment)
+    {
+        $this->ownerOnly($request);
+        abort_if($payment->import_batch_id,422,'Pembayaran hasil import tidak dapat diedit langsung. Gunakan fitur undo pada batch import terkait.');
+        $this->normalizeCurrencyFields($request,['amount']);
+        $data=$request->validate([
+            'amount'=>['required','numeric','min:1'],
+            'paid_at'=>['required','date'],
+            'method'=>['required',Rule::in(['Transfer','Cash','QRIS'])],
+            'billing_cycle'=>['required',Rule::in(['DAILY','WEEKLY','MONTHLY'])],
+            'periods'=>['required','integer','min:1','max:365'],
+            'period_start'=>[Rule::requiredIf($payment->is_historical),'nullable','date'],
+        ]);
+        $limit=match($data['billing_cycle']){'DAILY'=>365,'WEEKLY'=>52,default=>24};
+        abort_if((int)$data['periods']>$limit,422,'Jumlah periode melebihi batas untuk siklus tagihan ini.');
+
+        DB::transaction(function()use($payment,$data){
+            $lockedPayment=Payment::whereKey($payment->id)->lockForUpdate()->firstOrFail();
+            abort_if($lockedPayment->import_batch_id,422,'Pembayaran hasil import tidak dapat diedit langsung. Gunakan fitur undo pada batch import terkait.');
+            $tenant=Tenant::whereKey($lockedPayment->tenant_id)->lockForUpdate()->firstOrFail();
+            $cycle=$data['billing_cycle'];
+
+            if($lockedPayment->is_historical){
+                $periodStart=Carbon::parse($data['period_start'])->startOfDay();
+                [$period,$coverageEnd]=$this->paymentPeriod($periodStart,$cycle,(int)$data['periods']);
+                $lockedPayment->update([
+                    'amount'=>$data['amount'],
+                    'paid_at'=>$data['paid_at'],
+                    'method'=>$data['method'],
+                    'billing_cycle'=>$cycle,
+                    'period_count'=>$data['periods'],
+                    'period'=>$period,
+                    'coverage_start'=>$periodStart,
+                    'coverage_end'=>$coverageEnd,
+                ]);
+                return;
+            }
+
+            $scheduleChanged=$lockedPayment->billing_cycle!==$cycle||$lockedPayment->paid_at->toDateString()!==$data['paid_at'];
+            if($scheduleChanged&&$cycle==='MONTHLY'){
+                $paidAt=Carbon::parse($data['paid_at'])->startOfDay();
+                $duplicate=Payment::where('tenant_id',$tenant->id)
+                    ->where('id','!=',$lockedPayment->id)
+                    ->where('is_historical',false)
+                    ->where('billing_cycle','MONTHLY')
+                    ->whereBetween('paid_at',[$paidAt->copy()->startOfMonth()->toDateString(),$paidAt->copy()->endOfMonth()->toDateString()])
+                    ->exists();
+                abort_if($duplicate,422,'Pembayaran bulanan reguler lain untuk penghuni ini sudah tercatat pada '.$paidAt->translatedFormat('F Y').'.');
+            }
+
+            $lockedPayment->update([
+                'amount'=>$data['amount'],
+                'paid_at'=>$data['paid_at'],
+                'method'=>$data['method'],
+                'billing_cycle'=>$cycle,
+                'period_count'=>$data['periods'],
+            ]);
+            $this->rebuildRegularPaymentSchedule($tenant);
+        });
+
+        return back()->with('success','Pembayaran berhasil diperbarui. Periode dan jatuh tempo penghuni sudah disesuaikan.');
+    }
+
+    public function destroyPayment(Request $request,Payment $payment)
+    {
+        $this->ownerOnly($request);
+        abort_if($payment->import_batch_id,422,'Pembayaran hasil import tidak dapat dihapus langsung. Gunakan fitur undo pada batch import terkait.');
+
+        DB::transaction(function()use($payment){
+            $lockedPayment=Payment::whereKey($payment->id)->lockForUpdate()->firstOrFail();
+            abort_if($lockedPayment->import_batch_id,422,'Pembayaran hasil import tidak dapat dihapus langsung. Gunakan fitur undo pada batch import terkait.');
+            $tenant=Tenant::whereKey($lockedPayment->tenant_id)->lockForUpdate()->firstOrFail();
+            $regular=!$lockedPayment->is_historical;
+            $lockedPayment->delete();
+            if($regular)$this->rebuildRegularPaymentSchedule($tenant);
+        });
+
+        return back()->with('success','Pembayaran berhasil dihapus. Periode dan jatuh tempo penghuni sudah dihitung ulang.');
+    }
+
     public function expense(Request $request){$data=$this->expenseData($request);Expense::create($data+['recorded_by'=>$request->user()->id]);return back()->with('success','Pengeluaran dicatat.');}
     public function updateExpense(Request $request,Expense $expense){$this->ownerOnly($request);$data=$this->expenseData($request);$maintenance=$expense->maintenance;if($maintenance)$data['category']='Maintenance';DB::transaction(function()use($expense,$data,$maintenance){$expense->update($data);if($maintenance)$maintenance->update(['cost'=>$data['amount'],'reported_at'=>$data['spent_at'],'completed_at'=>$data['spent_at']]);});return back()->with('success','Pengeluaran dan periode keuangan berhasil diperbarui.');}
     public function storeExpenseCategory(Request $request){$this->ownerOnly($request);ExpenseCategory::create($this->expenseCategoryData($request));return back()->with('success','Kategori pengeluaran ditambahkan.');}
@@ -226,6 +307,30 @@ class KostController extends Controller
         return back()->with('success','Maintenance tercatat di riwayat kamar dan pengeluaran bulanan.');
     }
     public function updateWhatsAppTemplate(Request $request){$this->ownerOnly($request);$data=$request->validate(['template'=>['required','string','max:1500']]);AppSetting::updateOrCreate(['key'=>'whatsapp_payment_template'],['value'=>$data['template'],'updated_by'=>$request->user()->id]);return back()->with('success','Template follow-up WhatsApp diperbarui.');}
+
+
+    private function rebuildRegularPaymentSchedule(Tenant $tenant):void
+    {
+        $payments=Payment::where('tenant_id',$tenant->id)
+            ->where('is_historical',false)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+        $periodStart=$tenant->move_in->copy()->startOfDay();
+        $lastCycle=$tenant->billing_cycle;
+
+        foreach($payments as $item){
+            [$period,$coverageEnd]=$this->paymentPeriod($periodStart,$item->billing_cycle,(int)$item->period_count);
+            $item->update(['period'=>$period,'coverage_start'=>$periodStart,'coverage_end'=>$coverageEnd]);
+            $periodStart=$coverageEnd->copy()->addDay()->startOfDay();
+            $lastCycle=$item->billing_cycle;
+        }
+
+        $tenant->update([
+            'next_due'=>$payments->isEmpty()?$tenant->move_in->copy()->startOfDay():$periodStart->copy()->subDay(),
+            'billing_cycle'=>$lastCycle,
+        ]);
+    }
 
     private function ownerOnly(Request $request):void{abort_unless($request->user()->isOwner(),403);}
     private function websiteSettings():array

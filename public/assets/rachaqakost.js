@@ -167,6 +167,50 @@ document.addEventListener('DOMContentLoaded', () => {
     historicalPeriodStart?.addEventListener('change', updatePaymentPeriod);
     updatePaymentMode();
 
+    const paymentEditModal = document.getElementById('paymentEditModal');
+    const paymentEditForm = document.getElementById('paymentEditForm');
+    const paymentEditCycle = document.getElementById('paymentEditCycle');
+    const paymentEditPeriods = document.getElementById('paymentEditPeriods');
+    const paymentEditPeriodsLabel = document.getElementById('paymentEditPeriodsLabel');
+    const paymentEditHistoricalStart = document.getElementById('paymentEditHistoricalStart');
+    const paymentEditNote = document.getElementById('paymentEditNote');
+    const updatePaymentEditLimits = () => {
+        if (!paymentEditCycle || !paymentEditPeriods) return;
+        const config = {
+            DAILY: {label: 'Jumlah hari', max: 365},
+            WEEKLY: {label: 'Jumlah minggu', max: 52},
+            MONTHLY: {label: 'Jumlah bulan', max: 24},
+        }[paymentEditCycle.value];
+        paymentEditPeriods.max = String(config.max);
+        if (Number(paymentEditPeriods.value) > config.max) paymentEditPeriods.value = String(config.max);
+        if (paymentEditPeriodsLabel) paymentEditPeriodsLabel.textContent = config.label;
+    };
+    document.querySelectorAll('[data-edit-payment]').forEach(button => {
+        button.addEventListener('click', () => {
+            if (!paymentEditModal || !paymentEditForm) return;
+            const historical = button.dataset.kind === 'HISTORICAL';
+            paymentEditForm.action = button.dataset.action;
+            paymentEditForm.elements.amount.value = button.dataset.amount || '';
+            paymentEditForm.elements.paid_at.value = button.dataset.paidAt || '';
+            paymentEditForm.elements.method.value = button.dataset.method || 'Transfer';
+            paymentEditForm.elements.billing_cycle.value = button.dataset.cycle || 'MONTHLY';
+            paymentEditForm.elements.periods.value = button.dataset.periods || '1';
+            paymentEditForm.elements.period_start.value = button.dataset.periodStart || '';
+            document.getElementById('paymentEditTenant').textContent = button.dataset.name || '';
+            document.getElementById('paymentEditKind').textContent = historical ? 'Pembayaran Historis' : 'Pembayaran Reguler';
+            paymentEditHistoricalStart.hidden = !historical;
+            paymentEditForm.elements.period_start.required = historical;
+            if (paymentEditNote) paymentEditNote.textContent = historical
+                ? 'Perubahan pembayaran historis tidak memengaruhi jatuh tempo penghuni.'
+                : 'Periode sesudah transaksi ini dan jatuh tempo penghuni akan dihitung ulang otomatis.';
+            updatePaymentEditLimits();
+            formatCurrency(paymentEditForm.elements.amount);
+            paymentEditModal.showModal();
+        });
+    });
+    paymentEditCycle?.addEventListener('change', updatePaymentEditLimits);
+
+
     const tenantRoom = document.getElementById('tenantRoom');
     const tenantBillingCycle = document.getElementById('tenantBillingCycle');
     const tenantRatePreview = document.getElementById('tenantRatePreview');
