@@ -151,18 +151,20 @@ class KostController extends Controller
             $limit=match($cycle){'DAILY'=>365,'WEEKLY'=>52,default=>24};
             if((int)$data['periods']>$limit)throw ValidationException::withMessages(['periods'=>'Jumlah periode melebihi batas untuk siklus tagihan ini.']);
 
-            if(!$historical&&$cycle==='MONTHLY'){
-                $paidAt=Carbon::parse($data['paid_at'])->startOfDay();
-                $sameMonthRegularPayment=$tenant->payments()
-                    ->where('is_historical',false)
-                    ->where('billing_cycle','MONTHLY')
-                    ->whereBetween('paid_at',[$paidAt->copy()->startOfMonth()->toDateString(),$paidAt->copy()->endOfMonth()->toDateString()])
-                    ->exists();
-
-                if($sameMonthRegularPayment)throw ValidationException::withMessages([
-                    'tenant_id'=>'Pembayaran bulanan reguler untuk '.$tenant->name.' pada '.$paidAt->translatedFormat('F Y').' sudah tercatat. Jika membayar lebih dari satu bulan sekaligus, catat sebagai satu transaksi dan isi jumlah periode lebih dari 1.',
-                ]);
-            }
+            // Allow multiple valid payments in the same calendar month. Only reject
+            // an identical request submitted again within a short window (double-click/retry).
+            $recentDuplicate=$tenant->payments()
+                ->where('is_historical',$historical)
+                ->where('billing_cycle',$cycle)
+                ->where('period_count',(int)$data['periods'])
+                ->where('amount',$data['amount'])
+                ->whereDate('paid_at',$data['paid_at'])
+                ->where('method',$data['method'])
+                ->where('created_at','>=',now()->subMinute());
+            if($historical)$recentDuplicate->whereDate('coverage_start',$data['period_start']);
+            if($recentDuplicate->exists())throw ValidationException::withMessages([
+                'tenant_id'=>'Transaksi pembayaran identik baru saja tercatat. Periksa riwayat pembayaran sebelum mencoba kembali.',
+            ]);
 
             // next_due represents the LAST covered/rent-valid date. The next regular
             // payment therefore starts on the following day. If this tenant has never

@@ -167,6 +167,33 @@ document.addEventListener('DOMContentLoaded', () => {
     historicalPeriodStart?.addEventListener('change', updatePaymentPeriod);
     updatePaymentMode();
 
+    const paymentCreateForm = document.querySelector('#paymentModal form');
+    const paymentCreateButton = paymentCreateForm?.querySelector('.modalfoot .btn:not(.secondary)');
+    const resetPaymentCreateSubmission = () => {
+        if (!paymentCreateForm) return;
+        paymentCreateForm.dataset.submitting = '';
+        paymentCreateForm.removeAttribute('aria-busy');
+        if (paymentCreateButton) {
+            paymentCreateButton.disabled = false;
+            paymentCreateButton.textContent = paymentCreateButton.dataset.defaultLabel || 'Simpan pembayaran';
+        }
+    };
+    paymentCreateForm?.addEventListener('submit', event => {
+        if (paymentCreateForm.dataset.submitting === '1') {
+            event.preventDefault();
+            return;
+        }
+        paymentCreateForm.dataset.submitting = '1';
+        paymentCreateForm.setAttribute('aria-busy', 'true');
+        if (paymentCreateButton) {
+            paymentCreateButton.dataset.defaultLabel ||= paymentCreateButton.textContent;
+            paymentCreateButton.disabled = true;
+            paymentCreateButton.textContent = 'Menyimpan…';
+        }
+    });
+    window.addEventListener('pageshow', resetPaymentCreateSubmission);
+
+
     const paymentEditModal = document.getElementById('paymentEditModal');
     const paymentEditForm = document.getElementById('paymentEditForm');
     const paymentEditCycle = document.getElementById('paymentEditCycle');
