@@ -1,6 +1,6 @@
 @php
 $ownerOnlyTabs=$ownerOnlyTabs??['form-builder','website','users'];
-$titles=array_replace(['dashboard'=>'Ringkasan operasional','rooms'=>'Kamar & kategori','tenants'=>'Data penghuni','maintenance'=>'Maintenance kamar','form-drafts'=>'Draft Formulir','form-builder'=>'Atur Formulir','waiting-list'=>'Waiting List','payments'=>'Pembayaran','expenses'=>'Pengeluaran','website'=>'Homepage','users'=>'Akses Tim','finance'=>'Laporan Keuangan','imports'=>'Import Data'],$titles??[]);
+$titles=array_replace(['dashboard'=>'Ringkasan operasional','rooms'=>'Kamar & kategori','tenants'=>'Data penghuni','maintenance'=>'Maintenance kamar','form-drafts'=>'Draft Formulir','form-builder'=>'Atur Formulir','waiting-list'=>'Waiting List','payments'=>'Pembayaran','expenses'=>'Pengeluaran','website'=>'Homepage','users'=>'Akses Tim','finance'=>'Laporan Keuangan','business-simulation'=>'Simulasi Bisnis','imports'=>'Import Data'],$titles??[]);
 $navGroups=[
     'Operasional'=>['rooms'=>['▦','Kamar'],'tenants'=>['◎','Penghuni'],'maintenance'=>['◇','Maintenance']],
     'Formulir & Prospek'=>['form-drafts'=>['▤','Draft Formulir'],'form-builder'=>['⚙','Atur Formulir'],'waiting-list'=>['◌','Waiting List']],
@@ -22,8 +22,8 @@ $navGroups=[
             @endif
         @endforeach
         @if(auth()->user()->isOwner())
-        <details class="nav-group external-group" @if(in_array($activeTab,['finance','imports'],true)) open @endif>
-            <summary><span>Data & Laporan</span><i>⌄</i></summary><div><a href="{{ route('finance') }}" class="{{ $activeTab==='finance'?'active':'' }}"><span class="ico">Rp</span>Keuangan</a><a href="{{ route('imports.index') }}" class="{{ $activeTab==='imports'?'active':'' }}"><span class="ico">⇧</span>Import Data</a><a href="{{ route('home') }}" target="_blank"><span class="ico">↗</span>Lihat Website</a></div>
+        <details class="nav-group external-group" @if(in_array($activeTab,['finance','business-simulation','imports'],true)) open @endif>
+            <summary><span>Data & Laporan</span><i>⌄</i></summary><div><a href="{{ route('finance') }}" class="{{ $activeTab==='finance'?'active':'' }}"><span class="ico">Rp</span>Keuangan</a><a href="{{ route('business-simulation.index') }}" class="{{ $activeTab==='business-simulation'?'active':'' }}"><span class="ico">↗</span>Simulasi Bisnis</a><a href="{{ route('imports.index') }}" class="{{ $activeTab==='imports'?'active':'' }}"><span class="ico">⇧</span>Import Data</a><a href="{{ route('home') }}" target="_blank"><span class="ico">↗</span>Lihat Website</a></div>
         </details>
         @endif
     </nav>
@@ -52,9 +52,9 @@ $navGroups=[
             @endif
         @endforeach
         @if(auth()->user()->isOwner())
-        <details class="mobile-nav-group" @if(in_array($activeTab,['finance','imports'],true)) open @endif>
+        <details class="mobile-nav-group" @if(in_array($activeTab,['finance','business-simulation','imports'],true)) open @endif>
             <summary><span>Data & Laporan</span><i>⌄</i></summary>
-            <div><a href="{{ route('finance') }}" class="{{ $activeTab==='finance'?'active':'' }}"><span class="ico">Rp</span><span>Keuangan</span>@if($activeTab==='finance')<i>Aktif</i>@endif</a><a href="{{ route('imports.index') }}" class="{{ $activeTab==='imports'?'active':'' }}"><span class="ico">⇧</span><span>Import Data</span>@if($activeTab==='imports')<i>Aktif</i>@endif</a></div>
+            <div><a href="{{ route('finance') }}" class="{{ $activeTab==='finance'?'active':'' }}"><span class="ico">Rp</span><span>Keuangan</span>@if($activeTab==='finance')<i>Aktif</i>@endif</a><a href="{{ route('business-simulation.index') }}" class="{{ $activeTab==='business-simulation'?'active':'' }}"><span class="ico">↗</span><span>Simulasi Bisnis</span>@if($activeTab==='business-simulation')<i>Aktif</i>@endif</a><a href="{{ route('imports.index') }}" class="{{ $activeTab==='imports'?'active':'' }}"><span class="ico">⇧</span><span>Import Data</span>@if($activeTab==='imports')<i>Aktif</i>@endif</a></div>
         </details>
         @endif
     </nav>
