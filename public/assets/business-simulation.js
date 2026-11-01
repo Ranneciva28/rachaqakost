@@ -3,6 +3,7 @@
     if (!form) return;
 
     const facts = JSON.parse(document.getElementById('simulationFacts')?.textContent || '{}');
+    const actualFacts = JSON.parse(document.getElementById('simulationActual')?.textContent || '{}');
     const costs = JSON.parse(document.getElementById('simulationCosts')?.textContent || '[]');
     const range = form.querySelector('[data-occupancy-range]');
     const occupancy = form.querySelector('[data-occupancy-number]');
@@ -42,24 +43,22 @@
         const dailyRate = String(rate?.value ?? '').trim() === ''
             ? Number(facts.actual_daily_rate || 0)
             : numberValue(rate, Number(facts.actual_daily_rate || 0));
-        const fullOperating = costTotal('OPERATIONAL', 'FULL_MONTHLY');
         const hybridOperating = costTotal('OPERATIONAL', 'HYBRID');
-        const fullInvestment = costTotal('INVESTMENT', 'FULL_MONTHLY');
         const hybridInvestment = costTotal('INVESTMENT', 'HYBRID');
-        const fullGross = Number(facts.full_monthly_revenue || 0);
+        const actualRevenue = Number(actualFacts.revenue || 0);
+        const actualExpense = Number(actualFacts.expense || 0);
         const dailyGross = Number(facts.daily_rooms || 0) * dailyRate * projectionDays * occupied;
         const otaFee = dailyGross * otaRate;
         const hybridGross = dailyGross + Number(facts.hybrid_monthly_revenue || 0);
         const hybridRevenue = hybridGross - otaFee;
-        const full = scenario(fullGross, 0, fullGross, fullOperating, fullInvestment);
+        const actual = scenario(actualRevenue, 0, actualRevenue, actualExpense, 0);
         const hybrid = scenario(hybridGross, otaFee, hybridRevenue, hybridOperating, hybridInvestment);
         const dailyNetAtFull = Number(facts.daily_rooms || 0) * dailyRate * projectionDays * (1 - otaRate);
         return {
-            full, hybrid,
-            difference: hybrid.net_profit - full.net_profit,
-            full_break_even_occupancy: fullGross > 0 ? fullOperating / fullGross * 100 : null,
+            actual, hybrid,
+            difference: hybrid.net_profit - actual.net_profit,
             hybrid_break_even_occupancy: dailyNetAtFull > 0 ? Math.max(0, hybridOperating - Number(facts.hybrid_monthly_revenue || 0)) / dailyNetAtFull * 100 : null,
-            hybrid_parity_occupancy: dailyNetAtFull > 0 ? Math.max(0, full.net_profit + hybridOperating - Number(facts.hybrid_monthly_revenue || 0)) / dailyNetAtFull * 100 : null,
+            hybrid_parity_occupancy: dailyNetAtFull > 0 ? Math.max(0, actual.net_profit + hybridOperating - Number(facts.hybrid_monthly_revenue || 0)) / dailyNetAtFull * 100 : null,
         };
     };
     const get = (object, path) => path.split('.').reduce((value, key) => value?.[key], object);
@@ -77,7 +76,7 @@
             node.classList.toggle('negative', Number(get(result, key)) < 0 && key !== 'difference');
         });
         const label = document.querySelector('[data-difference-label]');
-        if (label) label.textContent = result.difference >= 0 ? 'Hybrid lebih menguntungkan' : 'Full Bulanan lebih menguntungkan';
+        if (label) label.textContent = result.difference >= 0 ? 'Hybrid lebih menguntungkan' : 'Kondisi aktual lebih menguntungkan';
     };
 
     range?.addEventListener('input', () => { occupancy.value = range.value; render(); });
