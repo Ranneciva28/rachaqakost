@@ -4,7 +4,10 @@ namespace App\Services;
 
 use App\Models\BusinessSimulation;
 use App\Models\BusinessSimulationCost;
+use App\Models\Expense;
+use App\Models\Payment;
 use App\Models\Room;
+use Carbon\Carbon;
 use Illuminate\Support\Collection;
 
 class BusinessSimulationService
@@ -43,7 +46,26 @@ class BusinessSimulationService
         ];
     }
 
-    public function calculate(BusinessSimulation $simulation, array $facts, ?Collection $costs = null): array
+    public function actualPeriodFacts(Carbon $month): array
+    {
+        $from = $month->copy()->startOfMonth();
+        $to = $month->copy()->endOfMonth();
+        $payments = Payment::whereBetween('paid_at', [$from->toDateString(), $to->toDateString()]);
+        $expenses = Expense::whereBetween('spent_at', [$from->toDateString(), $to->toDateString()]);
+
+        return [
+            'period' => $from->format('Y-m'),
+            'label' => $from->translatedFormat('F Y'),
+            'from' => $from->toDateString(),
+            'to' => $to->toDateString(),
+            'revenue' => (float) (clone $payments)->sum('amount'),
+            'expense' => (float) (clone $expenses)->sum('amount'),
+            'payment_count' => (clone $payments)->count(),
+            'expense_count' => (clone $expenses)->count(),
+        ];
+    }
+
+    public function calculate(BusinessSimulation $simulation, array $facts, array $actual, ?Collection $costs = null): array
     {
         $costs ??= $simulation->relationLoaded('costs') ? $simulation->costs : $simulation->costs()->get();
         $occupancy = max(0, min(100, (float) $simulation->daily_occupancy)) / 100;
@@ -51,13 +73,12 @@ class BusinessSimulationService
         $dailyRate = $simulation->daily_rate !== null ? (float) $simulation->daily_rate : (float) $facts['actual_daily_rate'];
         $days = max(1, (int) $simulation->projection_days);
 
-        $fullOperating = $this->costTotal($costs, 'OPERATIONAL', 'FULL_MONTHLY');
         $hybridOperating = $this->costTotal($costs, 'OPERATIONAL', 'HYBRID');
-        $fullInvestment = $this->costTotal($costs, 'INVESTMENT', 'FULL_MONTHLY');
         $hybridInvestment = $this->costTotal($costs, 'INVESTMENT', 'HYBRID');
 
-        $fullGross = (float) $facts['full_monthly_revenue'];
-        $fullNet = $fullGross - $fullOperating;
+        $actualRevenue = (float) $actual['revenue'];
+        $actualExpense = (float) $actual['expense'];
+        $actualNet = $actualRevenue - $actualExpense;
 
         $dailyGross = (float) $facts['daily_rooms'] * $dailyRate * $days * $occupancy;
         $otaFee = $dailyGross * $commission;
@@ -68,15 +89,14 @@ class BusinessSimulationService
 
         return [
             'daily_rate' => $dailyRate,
-            'full' => $this->scenarioMetrics($fullGross, 0, $fullGross, $fullOperating, $fullInvestment),
+            'actual' => $this->scenarioMetrics($actualRevenue, 0, $actualRevenue, $actualExpense, 0),
             'hybrid' => $this->scenarioMetrics($hybridGross, $otaFee, $hybridRevenue, $hybridOperating, $hybridInvestment),
-            'difference' => $hybridNet - $fullNet,
-            'full_break_even_occupancy' => $fullGross > 0 ? $this->percentage($fullOperating / $fullGross) : null,
+            'difference' => $hybridNet - $actualNet,
             'hybrid_break_even_occupancy' => $dailyNetAtFullOccupancy > 0
                 ? $this->percentage(max(0, $hybridOperating - (float) $facts['hybrid_monthly_revenue']) / $dailyNetAtFullOccupancy)
                 : null,
             'hybrid_parity_occupancy' => $dailyNetAtFullOccupancy > 0
-                ? $this->percentage(max(0, $fullNet + $hybridOperating - (float) $facts['hybrid_monthly_revenue']) / $dailyNetAtFullOccupancy)
+                ? $this->percentage(max(0, $actualNet + $hybridOperating - (float) $facts['hybrid_monthly_revenue']) / $dailyNetAtFullOccupancy)
                 : null,
         ];
     }
